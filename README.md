@@ -1,4 +1,4 @@
-# LeanBrowse 🌐⚡
+# DragoBrowse 🌐⚡
 
 A low-memory, privacy-first desktop web browser built with **Python 3**, **PySide6 (Qt for Python)**, and **Qt WebEngine (Chromium)**.
 
@@ -6,7 +6,7 @@ A low-memory, privacy-first desktop web browser built with **Python 3**, **PySid
 
 ## Architecture Overview
 
-LeanBrowse divides responsibilities between a custom Python browser application layer and the embedded Chromium rendering engine:
+DragoBrowse divides responsibilities between a custom Python browser application layer and the embedded Chromium rendering engine:
 
 ```
 +-----------------------------------------------------------------+
@@ -59,7 +59,7 @@ LeanBrowse divides responsibilities between a custom Python browser application 
 ## Directory Structure
 
 ```
-LeanBrowse/
+DragoBrowse/
 ├── main.py                     # Application entry point & CLI options
 ├── requirements.txt            # Dependency definitions (PySide6, psutil, pytest)
 ├── requirements-lock.txt       # Pinned reproducible dependency versions
