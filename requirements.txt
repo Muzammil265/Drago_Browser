@@ -1,3 +1,4 @@
 PySide6
 psutil
 pytest
+adblock>=0.6.0

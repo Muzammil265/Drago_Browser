@@ -1,0 +1,50 @@
+# Functional Exception Rules for Grago / LeanBrowse
+# Protects website functionality (Sign-in, OAuth, Payments, Captcha, Media DRM, CDNs)
+! Title: Grago Essential Functionality Whitelist
+! Expires: 7 days
+! Description: Ensures critical site features never break
+
+# ── 1. Authentication & Single Sign-On (SSO) ──────────────────────────────
+@@||accounts.google.com^
+@@||accounts.youtube.com^
+@@||login.microsoftonline.com^
+@@||login.live.com^
+@@||appleid.apple.com^
+@@||auth0.com^
+@@||github.com/login^
+@@||gitlab.com/users/sign_in^
+@@||id.atlassian.com^
+@@||sso.*^
+@@||auth.*^
+
+# ── 2. Payment & Checkout Gateways ────────────────────────────────────────
+@@||js.stripe.com^
+@@||api.stripe.com^
+@@||m.stripe.com^
+@@||paypal.com/sdk^
+@@||paypalobjects.com^
+@@||checkout.braintreegateway.com^
+@@||pay.google.com^
+@@||apple.com/apple-pay^
+
+# ── 3. Bot Detection & Verification (Captcha / Cloudflare) ────────────────
+@@||challenges.cloudflare.com^
+@@||google.com/recaptcha^
+@@||gstatic.com/recaptcha^
+@@||hcaptcha.com^
+@@||newassets.hcaptcha.com^
+@@||arkoselabs.com^
+
+# ── 4. Video Streaming Manifests & Content Delivery (Never Break Playback) ─
+@@||*.googlevideo.com/videoplayback^
+@@||*.googlevideo.com^$media
+@@||vimeo.com/api/player^
+@@||vimeocdn.com^$media
+@@||*.akamaihd.net^$media
+@@||*.cloudfront.net^$media
+@@||*.fastly.net^$media
+@@||widevine.com^
+@@||license.*^
+@@||drm.*^
+@@.m3u8$media
+@@.mpd$media

@@ -1,0 +1,30 @@
+# YouTube Dedicated Rules for Grago / LeanBrowse
+! Title: Grago YouTube Filter & Compatibility Rules
+! Description: YouTube video ad interception, tracking suppression, and video stream protection
+
+# ── 1. Video Stream Safety & Core Player Framework (Never Block) ───────────
+@@||googlevideo.com/videoplayback^$media
+@@||*.googlevideo.com/videoplayback*
+@@||youtube.com^$document
+@@||*.youtube.com^$document
+@@||youtube.com/watch*
+@@||m.youtube.com/watch*
+@@||youtube.com/s/*
+@@||youtube.com/youtubei/v1/*
+@@||i.ytimg.com^
+@@||yt3.ggpht.com^
+
+# ── 2. YouTube Ad Delivery & Tracking Networks ────────────────────────────
+||googleads.g.doubleclick.net/pagead^
+||static.doubleclick.net/instream/ad_status.js^
+||youtube.com/api/stats/ads^
+||youtube.com/pagead/^
+||youtube.com/get_midroll_info^
+||youtube.com/ptracking^
+||youtube.com/youtubei/v1/player/ad_break^
+
+# ── 3. Third-party video tracking on YouTube ──────────────────────────────
+||innovid.com^
+||flashtalking.com^
+||moatads.com^
+||doubleverify.com^

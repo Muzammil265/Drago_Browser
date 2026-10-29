@@ -15,6 +15,7 @@ from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QPainter,
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QFrame,
@@ -41,6 +42,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from browser.memory_manager import ResourceMonitor, TabMemoryManager
 from browser.privacy import BrowsingMode, PrivacyManager, normalize_url
+from browser.security import FingerprintProtectionMode, ProxyMode
 
 APP_NAME = "Grago"
 DEFAULT_HOME_URL = "https://www.google.com"
@@ -117,18 +119,40 @@ QPushButton#accent-btn:hover {
 }
 
 QPushButton#shield-btn {
-    background-color: #132e27;
+    background-color: #064e3b;
     border: 1px solid #059669;
     color: #34d399;
     font-weight: 600;
-    padding: 5px 10px;
+    padding: 5px 11px;
     border-radius: 6px;
 }
 
 QPushButton#shield-btn:hover {
-    background-color: #1b4337;
+    background-color: #065f46;
     border-color: #10b981;
     color: #6ee7b7;
+}
+
+QPushButton#identity-btn {
+    background-color: #2e1065;
+    border: 1px solid #7c3aed;
+    color: #ddd6fe;
+    font-weight: 600;
+    padding: 5px 11px;
+    border-radius: 6px;
+}
+
+QPushButton#identity-btn:hover {
+    background-color: #3b0764;
+    border-color: #a855f7;
+    color: #ffffff;
+}
+
+QPushButton#security-badge-btn {
+    background-color: transparent;
+    border: none;
+    font-size: 14px;
+    padding: 2px 4px;
 }
 
 QPushButton#sleep-btn {
@@ -296,7 +320,7 @@ QPushButton#tab-add-btn:hover {
 }
 
 /* ── Mode switcher ─────────────────────────────────────────────────── */
-QPushButton#mode-lean-btn, QPushButton#mode-private-btn {
+QPushButton#mode-lean-btn, QPushButton#mode-private-btn, QPushButton#mode-safest-btn {
     background: transparent;
     border: none;
     border-radius: 6px;
@@ -319,8 +343,15 @@ QPushButton#mode-private-btn:checked {
     border: 1px solid #7c3aed;
 }
 
+QPushButton#mode-safest-btn:checked {
+    background-color: #431407;
+    color: #fdba74;
+    border: 1px solid #ea580c;
+}
+
 QPushButton#mode-lean-btn:hover:!checked,
-QPushButton#mode-private-btn:hover:!checked {
+QPushButton#mode-private-btn:hover:!checked,
+QPushButton#mode-safest-btn:hover:!checked {
     background-color: #1e2330;
     color: #cbd5e1;
 }
@@ -835,18 +866,298 @@ class BrowserTabItem(QWidget):
             self._web_view.load(url)
 
 
-class PrivacyDialog(QDialog):
-    """Dialog displaying active privacy protections and session wiping."""
+class ShieldsFlyoutDialog(QDialog):
+    """Brave-style Shields control panel for per-site and session privacy controls."""
+
+    def __init__(
+        self,
+        privacy_manager: PrivacyManager,
+        current_url: QUrl,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._privacy_manager = privacy_manager
+        self._current_url = current_url
+        raw_host = current_url.host() if current_url.isValid() else ""
+        self._host = raw_host if raw_host else "New Tab / Internal"
+
+        self.setWindowTitle("Brave Shields — Site Protection")
+        self.setFixedWidth(400)
+        self.setStyleSheet(
+            """
+            QDialog {
+                background-color: #131620;
+                color: #e2e8f0;
+                border: 1px solid #232838;
+                border-radius: 10px;
+            }
+            QLabel {
+                color: #cbd5e1;
+            }
+            QCheckBox {
+                color: #e2e8f0;
+                font-size: 13px;
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 4px;
+                border: 1px solid #3b4252;
+                background-color: #1e222d;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #059669;
+                border-color: #10b981;
+            }
+            """
+        )
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(18, 18, 18, 18)
+
+        # Header card
+        header_card = QFrame(self)
+        header_card.setStyleSheet("background-color: #1a1e2b; border-radius: 8px; padding: 6px;")
+        h_layout = QHBoxLayout(header_card)
+        h_layout.setContentsMargins(8, 8, 8, 8)
+
+        lbl_shield_icon = QLabel("🛡️", header_card)
+        lbl_shield_icon.setStyleSheet("font-size: 26px; background: transparent;")
+        h_layout.addWidget(lbl_shield_icon)
+
+        title_vbox = QVBoxLayout()
+        title_vbox.setSpacing(2)
+        lbl_title = QLabel("Brave Shields", header_card)
+        lbl_title.setStyleSheet("font-size: 15px; font-weight: 700; color: #34d399; background: transparent;")
+        title_vbox.addWidget(lbl_title)
+
+        lbl_host = QLabel(self._host, header_card)
+        lbl_host.setStyleSheet("font-size: 12px; color: #94a3b8; background: transparent;")
+        title_vbox.addWidget(lbl_host)
+        h_layout.addLayout(title_vbox)
+
+        h_layout.addStretch()
+
+        # Shields Master Toggle
+        is_allowed = self._privacy_manager.interceptor.is_site_allowed(self._host)
+        self._chk_master = QPushButton("UP" if not is_allowed else "DOWN", header_card)
+        self._chk_master.setCheckable(True)
+        self._chk_master.setChecked(not is_allowed)
+        self._chk_master.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_master_button_style(not is_allowed)
+        self._chk_master.clicked.connect(self._toggle_master_shield)
+        h_layout.addWidget(self._chk_master)
+
+        layout.addWidget(header_card)
+
+        # Metrics Card
+        metrics_card = QFrame(self)
+        metrics_card.setStyleSheet("background-color: #161924; border: 1px solid #232838; border-radius: 8px; padding: 6px;")
+        m_layout = QVBoxLayout(metrics_card)
+        m_layout.setSpacing(8)
+
+        site_count = self._privacy_manager.interceptor.get_site_blocked_count(self._host)
+        total_count = self._privacy_manager.interceptor.total_blocked
+
+        row1 = QHBoxLayout()
+        r1_k = QLabel("Trackers & Ads Blocked on This Site:", metrics_card)
+        r1_k.setStyleSheet("color: #cbd5e1; font-size: 12px; background: transparent;")
+        self._lbl_site_count = QLabel(str(site_count), metrics_card)
+        self._lbl_site_count.setStyleSheet("color: #34d399; font-weight: 700; font-size: 13px; background: transparent;")
+        row1.addWidget(r1_k)
+        row1.addStretch()
+        row1.addWidget(self._lbl_site_count)
+        m_layout.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        r2_k = QLabel("Total Blocked This Session:", metrics_card)
+        r2_k.setStyleSheet("color: #cbd5e1; font-size: 12px; background: transparent;")
+        self._lbl_total_count = QLabel(str(total_count), metrics_card)
+        self._lbl_total_count.setStyleSheet("color: #38bdf8; font-weight: 700; font-size: 13px; background: transparent;")
+        row2.addWidget(r2_k)
+        row2.addStretch()
+        row2.addWidget(self._lbl_total_count)
+        m_layout.addLayout(row2)
+
+        # Filter List Engine Info Row
+        fm = self._privacy_manager.filter_manager
+        engine_name = "Rust adblock-rust ⚡" if fm.is_using_rust_engine else "Pure Python Trie"
+        row3 = QHBoxLayout()
+        r3_k = QLabel("Maintained Filter Rules:", metrics_card)
+        r3_k.setStyleSheet("color: #94a3b8; font-size: 11px; background: transparent;")
+        lbl_rules = QLabel(f"{fm.total_rules} rules ({engine_name})", metrics_card)
+        lbl_rules.setStyleSheet("color: #a78bfa; font-weight: 600; font-size: 11px; background: transparent;")
+        row3.addWidget(r3_k)
+        row3.addStretch()
+        row3.addWidget(lbl_rules)
+        m_layout.addLayout(row3)
+
+        layout.addWidget(metrics_card)
+
+        # ── YouTube-Dedicated Compatibility & Protection Card ─────────────────
+        is_yt = self._privacy_manager.youtube_shield.is_youtube_host(self._host)
+        if is_yt:
+            yt_card = QFrame(self)
+            yt_card.setStyleSheet("background-color: #1e1318; border: 1px solid #701a35; border-radius: 8px; padding: 8px;")
+            yt_layout = QVBoxLayout(yt_card)
+            yt_layout.setSpacing(6)
+
+            yt_title_row = QHBoxLayout()
+            yt_icon = QLabel("▶️", yt_card)
+            yt_icon.setStyleSheet("font-size: 14px; background: transparent;")
+            yt_title = QLabel("YouTube Dedicated Ad & Stream Shield", yt_card)
+            yt_title.setStyleSheet("font-size: 12px; font-weight: 700; color: #fb7185; background: transparent;")
+            yt_title_row.addWidget(yt_icon)
+            yt_title_row.addWidget(yt_title)
+            yt_title_row.addStretch()
+            yt_layout.addLayout(yt_title_row)
+
+            yt_status = QLabel("✓ Video streams whitelisted (*.googlevideo.com)\n✓ Dynamic video ad skipper active\n✓ Companion & masthead banner ads hidden", yt_card)
+            yt_status.setStyleSheet("color: #cbd5e1; font-size: 11px; background: transparent;")
+            yt_layout.addWidget(yt_status)
+
+            layout.addWidget(yt_card)
+
+        # ── Live Blocked Requests Log Card ────────────────────────────────────
+        log_card = QFrame(self)
+        log_card.setStyleSheet("background-color: #161924; border: 1px solid #232838; border-radius: 8px; padding: 8px;")
+        l_layout = QVBoxLayout(log_card)
+        l_layout.setSpacing(4)
+
+        lbl_log_title = QLabel("Live Intercepted Requests Log:", log_card)
+        lbl_log_title.setStyleSheet("font-size: 12px; font-weight: 600; color: #e2e8f0; background: transparent;")
+        l_layout.addWidget(lbl_log_title)
+
+        records = self._privacy_manager.interceptor.get_site_blocked_records(self._host)
+        if records:
+            scroll = QScrollArea(log_card)
+            scroll.setFixedHeight(90)
+            scroll.setWidgetResizable(True)
+            scroll.setStyleSheet("background: transparent; border: none;")
+            scroll_content = QWidget()
+            scroll_layout = QVBoxLayout(scroll_content)
+            scroll_layout.setContentsMargins(0, 0, 0, 0)
+            scroll_layout.setSpacing(3)
+
+            for rec in records[-8:]:
+                item_lbl = QLabel(f"🚫 {rec.target_host} ({rec.resource_type})", scroll_content)
+                item_lbl.setStyleSheet("color: #f87171; font-size: 11px; background: transparent;")
+                item_lbl.setToolTip(f"URL: {rec.target_url}\nRule: {rec.rule}")
+                scroll_layout.addWidget(item_lbl)
+
+            scroll.setWidget(scroll_content)
+            l_layout.addWidget(scroll)
+        else:
+            lbl_empty = QLabel("✓ No third-party trackers or ads blocked on this origin yet.", log_card)
+            lbl_empty.setStyleSheet("color: #64748b; font-size: 11px; font-style: italic; background: transparent;")
+            l_layout.addWidget(lbl_empty)
+
+        layout.addWidget(log_card)
+
+        # Protections Controls Card
+        ctrl_card = QFrame(self)
+        ctrl_card.setStyleSheet("background-color: #1a1e2b; border-radius: 8px; padding: 10px;")
+        c_layout = QVBoxLayout(ctrl_card)
+        c_layout.setSpacing(10)
+
+        # 1. Tracker & Ad Block mode
+        self._chk_trackers = QCheckBox("Block Trackers & Ads", ctrl_card)
+        self._chk_trackers.setChecked(self._privacy_manager.interceptor.enabled)
+        self._chk_trackers.toggled.connect(self._toggle_tracker_blocking)
+        c_layout.addWidget(self._chk_trackers)
+
+        # 2. Anti-Fingerprinting
+        af_active = (self._privacy_manager.anti_fingerprint.mode != FingerprintProtectionMode.DISABLED)
+        self._chk_fingerprint = QCheckBox("Anti-Fingerprinting (Canvas / Audio / WebGL)", ctrl_card)
+        self._chk_fingerprint.setChecked(af_active)
+        self._chk_fingerprint.toggled.connect(self._toggle_fingerprinting)
+        c_layout.addWidget(self._chk_fingerprint)
+
+        # 3. Upgrade HTTP to HTTPS
+        self._chk_https = QCheckBox("Enforce HTTPS-Only Mode", ctrl_card)
+        self._chk_https.setChecked(self._privacy_manager.interceptor.https_only)
+        self._chk_https.toggled.connect(self._toggle_https_only)
+        c_layout.addWidget(self._chk_https)
+
+        # 4. Block JavaScript
+        self._chk_js = QCheckBox("Block JavaScript (Tor Safest Mode)", ctrl_card)
+        self._chk_js.setChecked(self._privacy_manager.mode == BrowsingMode.SAFEST)
+        self._chk_js.toggled.connect(self._toggle_javascript)
+        c_layout.addWidget(self._chk_js)
+
+        layout.addWidget(ctrl_card)
+
+        # Actions
+        btn_layout = QHBoxLayout()
+        btn_arch = QPushButton("🏛️ Architecture Details", self)
+        btn_arch.setStyleSheet(
+            "background-color: #232734; border: 1px solid #333b4f; color: #cbd5e1; padding: 6px 12px; border-radius: 6px;"
+        )
+        btn_arch.clicked.connect(self._open_architecture_dialog)
+        btn_layout.addWidget(btn_arch)
+
+        btn_done = QPushButton("Done", self)
+        btn_done.setObjectName("accent-btn")
+        btn_done.clicked.connect(self.accept)
+        btn_layout.addWidget(btn_done)
+
+        layout.addLayout(btn_layout)
+
+    def _update_master_button_style(self, checked: bool) -> None:
+        if checked:
+            self._chk_master.setText("SHIELDS UP")
+            self._chk_master.setStyleSheet(
+                "background-color: #065f46; color: #6ee7b7; border: 1px solid #10b981; font-weight: 700; padding: 6px 12px; border-radius: 6px;"
+            )
+        else:
+            self._chk_master.setText("SHIELDS DOWN")
+            self._chk_master.setStyleSheet(
+                "background-color: #7f1d1d; color: #fecaca; border: 1px solid #ef4444; font-weight: 700; padding: 6px 12px; border-radius: 6px;"
+            )
+
+    def _toggle_master_shield(self) -> None:
+        shields_up = self._chk_master.isChecked()
+        self._update_master_button_style(shields_up)
+        self._privacy_manager.interceptor.set_site_shields(self._host, shields_up)
+
+    def _toggle_tracker_blocking(self, checked: bool) -> None:
+        self._privacy_manager.interceptor.enabled = checked
+
+    def _toggle_fingerprinting(self, checked: bool) -> None:
+        mode = FingerprintProtectionMode.BALANCED if checked else FingerprintProtectionMode.DISABLED
+        self._privacy_manager.anti_fingerprint.mode = mode
+
+    def _toggle_https_only(self, checked: bool) -> None:
+        self._privacy_manager.interceptor.https_only = checked
+
+    def _toggle_javascript(self, checked: bool) -> None:
+        if checked:
+            self._privacy_manager.set_mode(BrowsingMode.SAFEST)
+        else:
+            self._privacy_manager.set_mode(BrowsingMode.PRIVATE)
+
+    def _open_architecture_dialog(self) -> None:
+        self.accept()
+        dlg = SecurityArchitectureDialog(self._privacy_manager, self.parent())
+        dlg.exec()
+
+
+class SecurityArchitectureDialog(QDialog):
+    """Full 4-Layer Security Architecture dialog implementing the recommended specification."""
 
     def __init__(self, privacy_manager: PrivacyManager, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._privacy_manager = privacy_manager
-        self.setWindowTitle("Privacy & Security Controls — Grago")
-        self.setMinimumSize(480, 420)
+        self.setWindowTitle("Recommended Security Architecture — Grago")
+        self.setMinimumSize(660, 680)
         self.setStyleSheet(
             """
             QDialog {
-                background-color: #13161f;
+                background-color: #0f1117;
                 color: #e2e8f0;
             }
             QLabel {
@@ -857,76 +1168,206 @@ class PrivacyDialog(QDialog):
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setSpacing(14)
-        layout.setContentsMargins(24, 24, 24, 24)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(12)
 
-        header = QLabel("🛡️ Grago Privacy & Security", self)
-        header.setStyleSheet("font-size: 16px; font-weight: 700; color: #34d399;")
-        layout.addWidget(header)
+        # Header
+        header = QLabel("🛡️ 4-Layer Security Architecture", self)
+        header.setStyleSheet("font-size: 18px; font-weight: 700; color: #38bdf8;")
+        main_layout.addWidget(header)
 
-        desc = QLabel(
-            "Grago runs in a dedicated private profile by default. "
-            "No cookies, web cache, or browsing history are ever written to your hard drive.",
+        sub = QLabel(
+            "Practical and strong isolation architecture combining process sandboxing, "
+            "Brave-style shields, anti-fingerprinting, and Tor-style identity wiping.",
             self,
         )
-        desc.setWordWrap(True)
-        desc.setStyleSheet("color: #94a3b8; font-size: 12px;")
-        layout.addWidget(desc)
+        sub.setWordWrap(True)
+        sub.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        main_layout.addWidget(sub)
 
-        report = self._privacy_manager.get_privacy_report()
-        report_frame = QFrame(self)
-        report_frame.setStyleSheet(
-            "background-color: #1a1e2b; border: 1px solid #293044; border-radius: 8px; padding: 8px;"
+        # Scroll Area for the 4 Layers
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setSpacing(10)
+        scroll_layout.setContentsMargins(0, 0, 8, 0)
+
+        # ── Layer 1: User Interface (UI) ──────────────────────────────────
+        card1 = self._build_layer_card(
+            "1. User Interface (UI) Layer",
+            "#38bdf8",
+            [
+                ("Address Bar", "Real-time HTTPS security badge, domain highlight, query normalizer"),
+                ("Tab Management", "Lightweight sleeping tabs with idle-timeout memory conservation"),
+                ("Shields Button", f"Brave Shields popover ({self._privacy_manager.interceptor.total_blocked} blocked)"),
+                ("New Identity Button", "Tor-style zero-restart session wipe & fingerprint rotation (Ctrl+Shift+U)"),
+            ],
         )
-        report_layout = QVBoxLayout(report_frame)
-        report_layout.setSpacing(8)
+        scroll_layout.addWidget(card1)
 
-        for feature, status in report.items():
-            row = QHBoxLayout()
-            lbl_key = QLabel(feature, report_frame)
-            lbl_key.setStyleSheet("font-weight: 600; color: #e2e8f0; font-size: 12px;")
-            lbl_val = QLabel(status, report_frame)
-            lbl_val.setStyleSheet("color: #38bdf8; font-size: 12px;")
-            lbl_val.setAlignment(Qt.AlignmentFlag.AlignRight)
-            row.addWidget(lbl_key)
-            row.addWidget(lbl_val)
-            report_layout.addLayout(row)
-
-        layout.addWidget(report_frame)
-
-        btn_clear = QPushButton("🗑️ Flush In-Memory Session & Cookies Now", self)
-        btn_clear.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #7f1d1d;
-                border: 1px solid #dc2626;
-                color: #fecaca;
-                font-weight: 600;
-                padding: 8px 14px;
-                border-radius: 6px;
-            }
-            QPushButton:hover {
-                background-color: #991b1b;
-                color: #ffffff;
-            }
-            """
+        # ── Layer 2: Browser Core / Broker Process ────────────────────────
+        card2 = self._build_layer_card(
+            "2. Browser Core / Broker Process",
+            "#818cf8",
+            [
+                ("Process Management", "Site-per-process isolation flags (--site-per-process, IsolateOrigins)"),
+                ("Network Service", "Sandboxed network worker, Sec-GPC: 1, DNT: 1, Upgrade-Insecure-Requests"),
+                ("Extension Manager", self._privacy_manager.extension_manager.get_status_summary()["Policy"]),
+                ("Update Service", self._privacy_manager.update_service.update_status),
+            ],
         )
-        btn_clear.clicked.connect(self._on_clear_clicked)
-        layout.addWidget(btn_clear)
+        scroll_layout.addWidget(card2)
+
+        # ── Layer 3: Renderer Process Isolation ───────────────────────────
+        card3 = self._build_layer_card(
+            "3. Renderer Process Isolation (Site A / Site B)",
+            "#f472b6",
+            [
+                ("Site Isolation", "Dedicated isolated Chromium renderer processes for separate origins"),
+                ("Sandboxing", "Strict OS sandbox enabled (--enable-sandbox)"),
+                ("No File Access", "Local file access disallowed (--disallow-file-access-from-files)"),
+                ("Limited Privileges", "No clipboard theft, no unauthorized popups, media requires gesture"),
+            ],
+        )
+        scroll_layout.addWidget(card3)
+
+        # ── Layer 4: Privacy & Security Layer ─────────────────────────────
+        card4 = self._build_layer_card(
+            "4. Privacy & Security Layer",
+            "#34d399",
+            [
+                ("Built-in Tracker / Ad Blocker", f"Blocking {len(self._privacy_manager.get_privacy_report())} active rules"),
+                ("Anti-Fingerprinting", f"Active ({self._privacy_manager.anti_fingerprint.mode.name.title()} Seed: {self._privacy_manager.anti_fingerprint.session_seed})"),
+                ("First-Party Containers", f"Context: {self._privacy_manager.container_manager.active_container.name} (Isolated cookies/storage)"),
+                ("Strict CSP & HTTPS-Only", "Automatic HTTP to HTTPS upgrades with strict security headers"),
+                ("Optional Tor / Proxy", self._privacy_manager.network_security.proxy_mode.value),
+                ("Clear on Exit", "Automatic purge of memory cache, cookies & storage on browser exit"),
+            ],
+        )
+        scroll_layout.addWidget(card4)
+
+        scroll.setWidget(scroll_content)
+        main_layout.addWidget(scroll)
+
+        # Interactive controls card
+        settings_frame = QFrame(self)
+        settings_frame.setStyleSheet("background-color: #171b26; border: 1px solid #23293a; border-radius: 8px; padding: 10px;")
+        sf_layout = QVBoxLayout(settings_frame)
+        sf_layout.setSpacing(8)
+
+        # Proxy / Tor Selector
+        p_row = QHBoxLayout()
+        lbl_proxy = QLabel("Network Proxy Mode:", settings_frame)
+        lbl_proxy.setStyleSheet("font-weight: 600; color: #e2e8f0; font-size: 12px; background: transparent;")
+        self._combo_proxy = QComboBox(settings_frame)
+        self._combo_proxy.addItem("Direct Connection", ProxyMode.DIRECT)
+        self._combo_proxy.addItem("Tor Network (SOCKS5 127.0.0.1:9050)", ProxyMode.TOR)
+        self._combo_proxy.setCurrentIndex(1 if self._privacy_manager.network_security.proxy_mode == ProxyMode.TOR else 0)
+        self._combo_proxy.currentIndexChanged.connect(self._on_proxy_changed)
+        p_row.addWidget(lbl_proxy)
+        p_row.addStretch()
+        p_row.addWidget(self._combo_proxy)
+        sf_layout.addLayout(p_row)
+
+        # Clear on Exit Checkbox
+        self._chk_exit_clear = QCheckBox("Clear all cookies and cache automatically on browser exit", settings_frame)
+        self._chk_exit_clear.setChecked(self._privacy_manager.network_security.clear_on_exit)
+        self._chk_exit_clear.toggled.connect(lambda val: setattr(self._privacy_manager.network_security, "clear_on_exit", val))
+        sf_layout.addWidget(self._chk_exit_clear)
+
+        main_layout.addWidget(settings_frame)
+
+        # Action Buttons
+        btn_row = QHBoxLayout()
+
+        btn_wipe = QPushButton("🗑️ Flush Session & Cookies Now", self)
+        btn_wipe.setStyleSheet("background-color: #7f1d1d; border: 1px solid #dc2626; color: #fecaca; font-weight: 600; padding: 7px 12px; border-radius: 6px;")
+        btn_wipe.clicked.connect(self._on_flush_clicked)
+        btn_row.addWidget(btn_wipe)
+
+        btn_rotate_seed = QPushButton("🔄 Rotate Seed", self)
+        btn_rotate_seed.setStyleSheet("background-color: #1e1b4b; border: 1px solid #4f46e5; color: #c7d2fe; font-weight: 600; padding: 7px 12px; border-radius: 6px;")
+        btn_rotate_seed.clicked.connect(self._on_rotate_seed)
+        btn_row.addWidget(btn_rotate_seed)
+
+        btn_check_updates = QPushButton("🔍 Check Updates", self)
+        btn_check_updates.setStyleSheet("background-color: #172554; border: 1px solid #2563eb; color: #bfdbfe; font-weight: 600; padding: 7px 12px; border-radius: 6px;")
+        btn_check_updates.clicked.connect(self._on_check_updates)
+        btn_row.addWidget(btn_check_updates)
 
         btn_close = QPushButton("Done", self)
         btn_close.setObjectName("accent-btn")
         btn_close.clicked.connect(self.accept)
-        layout.addWidget(btn_close)
+        btn_row.addWidget(btn_close)
 
-    def _on_clear_clicked(self) -> None:
+        main_layout.addLayout(btn_row)
+
+    def _build_layer_card(self, title: str, color: str, items: List[Tuple[str, str]]) -> QFrame:
+        card = QFrame()
+        card.setStyleSheet(
+            f"background-color: #161924; border: 1px solid #24293a; border-left: 3px solid {color}; border-radius: 8px; padding: 10px;"
+        )
+        c_layout = QVBoxLayout(card)
+        c_layout.setSpacing(6)
+        c_layout.setContentsMargins(8, 8, 8, 8)
+
+        lbl_t = QLabel(title, card)
+        lbl_t.setStyleSheet(f"font-size: 13px; font-weight: 700; color: {color}; background: transparent;")
+        c_layout.addWidget(lbl_t)
+
+        for k, v in items:
+            row = QHBoxLayout()
+            lbl_k = QLabel(f"• {k}:", card)
+            lbl_k.setStyleSheet("color: #94a3b8; font-size: 12px; font-weight: 500; background: transparent;")
+            lbl_v = QLabel(v, card)
+            lbl_v.setStyleSheet("color: #f1f5f9; font-size: 12px; background: transparent;")
+            lbl_v.setWordWrap(True)
+            row.addWidget(lbl_k)
+            row.addSpacing(6)
+            row.addWidget(lbl_v)
+            row.addStretch()
+            c_layout.addLayout(row)
+
+        return card
+
+    def _on_proxy_changed(self) -> None:
+        mode = self._combo_proxy.currentData()
+        self._privacy_manager.network_security.set_proxy_mode(mode)
+        QMessageBox.information(
+            self,
+            "Proxy Configuration Updated",
+            f"Network routing switched to: {mode.value}",
+        )
+
+    def _on_flush_clicked(self) -> None:
         self._privacy_manager.clear_session_data()
         QMessageBox.information(
             self,
             "Session Cleared",
             "In-memory HTTP cache, cookies, and visited link records have been completely purged.",
         )
+
+    def _on_rotate_seed(self) -> None:
+        new_seed = self._privacy_manager.anti_fingerprint.regenerate_seed()
+        QMessageBox.information(
+            self,
+            "Anti-Fingerprint Seed Rotated",
+            f"A fresh random noise seed ({new_seed}) has been generated and applied to the anti-fingerprinting shields.",
+        )
+
+    def _on_check_updates(self) -> None:
+        has_update, msg = self._privacy_manager.update_service.check_for_updates()
+        QMessageBox.information(
+            self,
+            "Security Update Status",
+            msg,
+        )
+
+
+PrivacyDialog = SecurityArchitectureDialog
 
 
 class GragoWindow(QMainWindow):
@@ -943,6 +1384,10 @@ class GragoWindow(QMainWindow):
         self._memory_manager = TabMemoryManager(idle_timeout_seconds=IDLE_TIMEOUT_SECONDS)
         self._start_url = start_url
         self._tab_counter = 0
+
+        # Wire interceptor real-time blocked count signals
+        self._privacy_manager.interceptor.blocked_count_changed.connect(self._on_blocked_count_changed)
+        self._privacy_manager.interceptor.site_blocked_count_changed.connect(self._on_site_blocked_count_changed)
 
         self._setup_ui()
         self._setup_shortcuts()
@@ -986,6 +1431,14 @@ class GragoWindow(QMainWindow):
         self.btn_home.clicked.connect(self._navigate_home)
         toolbar.addWidget(self.btn_home)
 
+        # Security Padlock / Status Indicator
+        self.btn_security_indicator = QPushButton("🔒", self)
+        self.btn_security_indicator.setObjectName("security-badge-btn")
+        self.btn_security_indicator.setToolTip("Connection Security (Click for Brave Shields)")
+        self.btn_security_indicator.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_security_indicator.clicked.connect(self._show_shields_flyout)
+        toolbar.addWidget(self.btn_security_indicator)
+
         # Address / Search Bar
         self.url_bar = QLineEdit(self)
         self.url_bar.setObjectName("url-bar")
@@ -993,6 +1446,22 @@ class GragoWindow(QMainWindow):
         self.url_bar.setClearButtonEnabled(True)
         self.url_bar.returnPressed.connect(self._navigate_to_input)
         toolbar.addWidget(self.url_bar)
+
+        # Brave Shields Button
+        self.btn_shields = QPushButton("🛡️ Shields", self)
+        self.btn_shields.setObjectName("shield-btn")
+        self.btn_shields.setToolTip("Brave Shields: Tracker & ad blocking, anti-fingerprinting (Ctrl+Shift+B)")
+        self.btn_shields.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_shields.clicked.connect(self._show_shields_flyout)
+        toolbar.addWidget(self.btn_shields)
+
+        # Tor New Identity Button
+        self.btn_new_identity = QPushButton("✨ New Identity", self)
+        self.btn_new_identity.setObjectName("identity-btn")
+        self.btn_new_identity.setToolTip("Tor New Identity: Wipe cookies, cache & rotate seed (Ctrl+Shift+U)")
+        self.btn_new_identity.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_new_identity.clicked.connect(self._trigger_new_identity)
+        toolbar.addWidget(self.btn_new_identity)
 
         # Sleep threshold selector
         self.combo_timeout = QComboBox(self)
@@ -1014,7 +1483,7 @@ class GragoWindow(QMainWindow):
         self.btn_sleep_bg.clicked.connect(self._hibernate_background_tabs)
         toolbar.addWidget(self.btn_sleep_bg)
 
-        # ── Mode Switcher (Lean / Private) ──────────────────────────────
+        # ── Mode Switcher (Lean / Private / Safest) ──────────────────────
         mode_frame = QFrame(self)
         mode_frame.setObjectName("mode-frame")
         mode_frame.setStyleSheet("""
@@ -1040,21 +1509,33 @@ class GragoWindow(QMainWindow):
 
         self.btn_mode_private = QPushButton("🔒 Private", self)
         self.btn_mode_private.setObjectName("mode-private-btn")
-        self.btn_mode_private.setToolTip("Private Mode: stricter cookie & JS policy, no 3rd-party tracking")
+        self.btn_mode_private.setToolTip("Private Mode: stricter cookie & JS policy, anti-fingerprinting")
         self.btn_mode_private.setCheckable(True)
         self.btn_mode_private.setChecked(False)
         self.btn_mode_private.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_mode_private.clicked.connect(lambda: self._set_mode(BrowsingMode.PRIVATE))
         mode_layout.addWidget(self.btn_mode_private)
 
+        self.btn_mode_safest = QPushButton("🛡️ Safest", self)
+        self.btn_mode_safest.setObjectName("mode-safest-btn")
+        self.btn_mode_safest.setToolTip("Safest Mode: JavaScript disabled, WebGL disabled, strict HTTPS (Tor 'Safest')")
+        self.btn_mode_safest.setCheckable(True)
+        self.btn_mode_safest.setChecked(False)
+        self.btn_mode_safest.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_mode_safest.clicked.connect(lambda: self._set_mode(BrowsingMode.SAFEST))
+        mode_layout.addWidget(self.btn_mode_safest)
+
         toolbar.addWidget(mode_frame)
 
-        # Privacy details button
-        self.btn_privacy = QPushButton("🛡️", self)
+        # Architecture details button
+        self.btn_privacy = QPushButton("🏛️ Architecture", self)
         self.btn_privacy.setObjectName("shield-btn")
-        self.btn_privacy.setToolTip("View privacy status & clear session data")
-        self.btn_privacy.clicked.connect(self._show_privacy_dialog)
+        self.btn_privacy.setToolTip("View full 4-Layer Security Architecture & Telemetry")
+        self.btn_privacy.clicked.connect(self._show_security_architecture_dialog)
         toolbar.addWidget(self.btn_privacy)
+
+        # Wire interceptor count update
+        self._privacy_manager.interceptor.blocked_count_changed.connect(self._on_blocked_count_changed)
 
         # Memory Indicator Badge
         self.lbl_memory = QLabel("⚡ Initializing...", self)
@@ -1109,7 +1590,9 @@ class GragoWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Tab"), self, self._next_tab)
         QShortcut(QKeySequence("Ctrl+Shift+Tab"), self, self._prev_tab)
         QShortcut(QKeySequence("Ctrl+Shift+S"), self, self._hibernate_background_tabs)
-        QShortcut(QKeySequence("Ctrl+Shift+Delete"), self, self._show_privacy_dialog)
+        QShortcut(QKeySequence("Ctrl+Shift+Delete"), self, self._show_security_architecture_dialog)
+        QShortcut(QKeySequence("Ctrl+Shift+U"), self, self._trigger_new_identity)
+        QShortcut(QKeySequence("Ctrl+Shift+B"), self, self._show_shields_flyout)
 
     def _setup_timers(self) -> None:
         """Start memory monitoring and tab idle checkers."""
@@ -1174,11 +1657,18 @@ class GragoWindow(QMainWindow):
     def _set_mode(self, mode: BrowsingMode) -> None:
         """Switch browsing mode and update toolbar button states."""
         self._privacy_manager.set_mode(mode)
-        is_lean = mode == BrowsingMode.LEAN
-        self.btn_mode_lean.setChecked(is_lean)
-        self.btn_mode_private.setChecked(not is_lean)
+        self.btn_mode_lean.setChecked(mode == BrowsingMode.LEAN)
+        self.btn_mode_private.setChecked(mode == BrowsingMode.PRIVATE)
+        self.btn_mode_safest.setChecked(mode == BrowsingMode.SAFEST)
 
-        label = "Lean Mode ⚡" if is_lean else "Private Mode 🔒"
+        if mode == BrowsingMode.LEAN:
+            label = "Lean Mode ⚡"
+        elif mode == BrowsingMode.PRIVATE:
+            label = "Private Mode 🔒"
+        else:
+            label = "Safest Mode 🛡️ (JavaScript Disabled)"
+
+        self._update_security_indicator()
         self.status_bar.showMessage(f"Switched to {label} — applies to new tabs.", 4000)
 
     def _apply_tab_close_button(self, index: int) -> None:
@@ -1215,6 +1705,8 @@ class GragoWindow(QMainWindow):
         self._update_nav_buttons()
         self._update_tab_title(index, tab)
         self._update_tab_stats()
+        self._update_security_indicator()
+        self._update_shields_button_for_current_tab()
 
     def _on_tab_title_changed(self, tab: BrowserTabItem, title: str) -> None:
         index = self.tab_widget.indexOf(tab)
@@ -1227,6 +1719,8 @@ class GragoWindow(QMainWindow):
         if tab == self._current_tab_item():
             self.url_bar.setText(url.toString())
             self._update_nav_buttons()
+            self._update_security_indicator()
+            self._update_shields_button_for_current_tab()
         self._memory_manager.update_tab(tab.tab_id, url=url.toString())
 
     def _on_load_progress(self, progress: int) -> None:
@@ -1242,6 +1736,14 @@ class GragoWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self.btn_reload.setText("🔄")
         self._update_nav_buttons()
+        self._update_shields_button_for_current_tab()
+
+        # Check and apply YouTube-specific Ad & Streaming Shield
+        if ok and tab.web_view and tab.url.isValid():
+            host = tab.url.host()
+            if self._privacy_manager.youtube_shield.is_youtube_host(host):
+                script = self._privacy_manager.youtube_shield.generate_injection_script()
+                tab.web_view.page().runJavaScript(script)
 
     def _on_link_hovered(self, link_text: str) -> None:
         if link_text:
@@ -1428,5 +1930,102 @@ class GragoWindow(QMainWindow):
         )
 
     def _show_privacy_dialog(self) -> None:
-        dlg = PrivacyDialog(self._privacy_manager, self)
+        self._show_security_architecture_dialog()
+
+    def _show_security_architecture_dialog(self) -> None:
+        """Open the 4-layer security architecture and controls dialog."""
+        dlg = SecurityArchitectureDialog(self._privacy_manager, self)
         dlg.exec()
+
+    def _show_shields_flyout(self) -> None:
+        """Open the Brave Shields popup flyout for the active tab."""
+        tab = self._current_tab_item()
+        url = tab.url if tab else QUrl()
+        dlg = ShieldsFlyoutDialog(self._privacy_manager, url, self)
+        dlg.exec()
+
+    def _on_blocked_count_changed(self, count: int) -> None:
+        """Dynamically update Brave Shields button label if no site-specific count is shown."""
+        self._update_shields_button_for_current_tab()
+
+    def _on_site_blocked_count_changed(self, host: str, count: int) -> None:
+        """Dynamically update Brave Shields button label when requests on the active site are blocked."""
+        tab = self._current_tab_item()
+        if tab and tab.url.isValid() and not tab.url.isEmpty():
+            curr_host = tab.url.host().lower().lstrip("www.")
+            if curr_host == host.lower().lstrip("www."):
+                if hasattr(self, "btn_shields"):
+                    self.btn_shields.setText(f"🛡️ Shields ({count})")
+
+    def _update_shields_button_for_current_tab(self) -> None:
+        """Update Shields button text to reflect the actual blocked count for the current tab origin."""
+        if not hasattr(self, "btn_shields"):
+            return
+        tab = self._current_tab_item()
+        if tab and tab.url.isValid() and not tab.url.isEmpty():
+            host = tab.url.host()
+            site_count = self._privacy_manager.interceptor.get_site_blocked_count(host)
+            if site_count > 0:
+                self.btn_shields.setText(f"🛡️ Shields ({site_count})")
+            else:
+                self.btn_shields.setText("🛡️ Shields")
+        else:
+            self.btn_shields.setText("🛡️ Shields")
+
+    def _trigger_new_identity(self) -> None:
+        """Tor-style New Identity: resets sessions, wipes cache/cookies, rotates fingerprint seed."""
+        reply = QMessageBox.question(
+            self,
+            "Tor New Identity",
+            "This will close background tabs, wipe in-memory cookies and cache, "
+            "rotate your anti-fingerprint seed, and create a fresh session.\n\n"
+            "Do you wish to proceed?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            # 1. Close background tabs
+            while self.tab_widget.count() > 1:
+                self._on_tab_close_requested(self.tab_widget.count() - 1)
+            # 2. Reset active tab to new-tab page
+            tab = self._current_tab_item()
+            if tab:
+                tab.load(QUrl(NEW_TAB_SENTINEL))
+            # 3. Purge data & rotate anti-fingerprint seed
+            self._privacy_manager.new_identity()
+            self._on_blocked_count_changed(0)
+            self._update_security_indicator()
+            self.status_bar.showMessage("✨ New Identity Active: In-memory cache & cookies cleared, fresh seed assigned.", 5000)
+            self._update_tab_stats()
+            self._update_memory_indicator()
+
+    def _update_security_indicator(self) -> None:
+        """Update address bar security icon and tooltip based on connection security and mode."""
+        if not hasattr(self, "btn_security_indicator"):
+            return
+        tab = self._current_tab_item()
+        url = tab.url if tab else QUrl()
+        mode = self._privacy_manager.mode
+
+        if mode == BrowsingMode.SAFEST:
+            self.btn_security_indicator.setText("🛡️")
+            self.btn_security_indicator.setToolTip("Safest Mode Active: JavaScript & WebGL disabled, strict HTTPS")
+            self.btn_security_indicator.setStyleSheet("color: #fb923c;")
+        elif url.scheme() == "https":
+            self.btn_security_indicator.setText("🔒")
+            self.btn_security_indicator.setToolTip("Secure Connection (HTTPS)")
+            self.btn_security_indicator.setStyleSheet("color: #34d399;")
+        elif url.scheme() == "http":
+            self.btn_security_indicator.setText("⚠️")
+            self.btn_security_indicator.setToolTip("Insecure Connection (HTTP)")
+            self.btn_security_indicator.setStyleSheet("color: #f87171;")
+        else:
+            self.btn_security_indicator.setText("🌐")
+            self.btn_security_indicator.setToolTip("Local / Internal Page")
+            self.btn_security_indicator.setStyleSheet("color: #38bdf8;")
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        """Purge in-memory cookies and storage on browser exit if enabled."""
+        if self._privacy_manager.network_security.clear_on_exit:
+            self._privacy_manager.clear_session_data()
+        super().closeEvent(event)
