@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # LeanBrowse (Grago) 🌐⚡
+=======
+# DragoBrowse 🌐⚡
+>>>>>>> origin/main
 
 A low-memory, privacy-first desktop web browser built with **Python 3**, **PySide6 (Qt for Python)**, and **Qt WebEngine (Chromium)**.
 
@@ -6,7 +10,11 @@ A low-memory, privacy-first desktop web browser built with **Python 3**, **PySid
 
 ## 4-Layer Security Architecture
 
+<<<<<<< HEAD
 LeanBrowse implements a strong, practical 4-layer security architecture designed for lightweight, high-privacy desktop browsing:
+=======
+DragoBrowse divides responsibilities between a custom Python browser application layer and the embedded Chromium rendering engine:
+>>>>>>> origin/main
 
 ```
 +-------------------------------------------------------------+
@@ -75,8 +83,13 @@ LeanBrowse implements a strong, practical 4-layer security architecture designed
 ## Directory Structure
 
 ```
+<<<<<<< HEAD
 LeanBrowse/
 ├── main.py                     # Entry point & Chromium process isolation flags
+=======
+DragoBrowse/
+├── main.py                     # Application entry point & CLI options
+>>>>>>> origin/main
 ├── requirements.txt            # Dependency definitions (PySide6, psutil, pytest)
 ├── requirements-lock.txt       # Pinned reproducible dependency versions
 ├── .gitignore                  # Git ignore rules for venv, cache, bytecode
