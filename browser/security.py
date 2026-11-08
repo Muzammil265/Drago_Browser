@@ -188,7 +188,7 @@ class AntiFingerprintEngine(QObject):
     def get_web_engine_script(self) -> QWebEngineScript:
         """Create or retrieve a QWebEngineScript configured for DocumentCreation injection."""
         script = QWebEngineScript()
-        script.setName("GragoAntiFingerprint")
+        script.setName("DragoAntiFingerprint")
         script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
         script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
         script.setRunsOnSubFrames(True)
@@ -201,7 +201,7 @@ class AntiFingerprintEngine(QObject):
         scripts = profile.scripts()
         # Remove existing if any
         for s in list(scripts.toList()):
-            if s.name() == "GragoAntiFingerprint":
+            if s.name() in ("DragoAntiFingerprint", "GragoAntiFingerprint"):
                 scripts.remove(s)
         if self._mode != FingerprintProtectionMode.DISABLED:
             scripts.insert(self.get_web_engine_script())

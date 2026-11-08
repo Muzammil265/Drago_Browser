@@ -114,7 +114,7 @@ def test_anti_fingerprint_profile_application(qapp):
     # In Lean mode balanced or Private mode
     pm.set_mode(BrowsingMode.PRIVATE)
     private_scripts = [s.name() for s in pm.profile.scripts().toList()]
-    assert "GragoAntiFingerprint" in private_scripts
+    assert "DragoAntiFingerprint" in private_scripts or "GragoAntiFingerprint" in private_scripts
 
 
 # ── 3. Strict Extension Policy Manager Tests ───────────────────────────────

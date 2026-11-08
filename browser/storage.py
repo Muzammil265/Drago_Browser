@@ -20,9 +20,9 @@ from typing import Any, Dict, List, Optional
 
 
 def get_default_db_path() -> str:
-    """Return default path to SQLite database in ~/.grago/storage.db with fallback."""
+    """Return default path to SQLite database in ~/.drago/storage.db with fallback."""
     try:
-        data_dir = os.path.join(os.path.expanduser("~"), ".grago")
+        data_dir = os.path.join(os.path.expanduser("~"), ".drago")
         os.makedirs(data_dir, exist_ok=True)
         return os.path.join(data_dir, "storage.db")
     except Exception:
@@ -202,7 +202,7 @@ class StorageManager:
     # ── Browsing History ──────────────────────────────────────────────────────
     def add_history(self, url: str, title: str) -> None:
         """Record visited page to history. (Should only be called in non-private mode)."""
-        if not url or url.startswith("about:") or url.startswith("grago://"):
+        if not url or url.startswith("about:") or url.startswith("drago://") or url.startswith("grago://"):
             return
         clean_title = title.strip() or url
         with self._lock:

@@ -99,12 +99,13 @@ class YouTubeShieldHandler(QObject):
         """Generate client-side script for YouTube video ad skipping & cosmetic blocking."""
         return """
         (function() {
-            if (window.__grago_yt_shield_active) return;
+            if (window.__drago_yt_shield_active || window.__grago_yt_shield_active) return;
+            window.__drago_yt_shield_active = true;
             window.__grago_yt_shield_active = true;
 
             // 1. Inject Cosmetic CSS to hide YouTube promo/banner ad elements
             const style = document.createElement('style');
-            style.id = 'grago-yt-shield-style';
+            style.id = 'drago-yt-shield-style';
             style.textContent = `
                 /* Companion and banner ads */
                 #masthead-ad,

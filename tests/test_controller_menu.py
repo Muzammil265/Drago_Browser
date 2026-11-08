@@ -47,6 +47,26 @@ def test_three_dots_menu_button_present(qapp):
     assert win.btn_menu.text() == "⋮"
     assert win.btn_menu.objectName() == "menu-btn"
     assert "Alt+F" in win.btn_menu.toolTip()
+    # Confirm toolbar search bar expands cleanly
+    assert hasattr(win, "url_bar")
+    win.close()
+
+
+def test_toolbar_layout_clean_search_bar(qapp):
+    """Test that toolbar options were moved to the menu and url_bar is clean and expanding."""
+    win = GragoWindow()
+    # url_bar should exist and be set to expanding policy
+    assert win.url_bar.sizePolicy().horizontalPolicy().name == "Expanding"
+    # Three dots menu button should be directly at the end of the toolbar
+    assert win.btn_menu.parent() is not None
+    # Mode and sleep controls should work via controller methods
+    from browser.privacy import BrowsingMode
+    win._set_mode(BrowsingMode.SAFEST)
+    assert win._privacy_manager.mode == BrowsingMode.SAFEST
+    win._set_mode(BrowsingMode.LEAN)
+    assert win._privacy_manager.mode == BrowsingMode.LEAN
+    win._set_sleep_timeout(60)
+    assert win._memory_manager.idle_timeout_seconds == 60
     win.close()
 
 

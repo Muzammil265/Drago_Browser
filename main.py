@@ -1,6 +1,6 @@
-"""Grago - Privacy-First, Low-Memory Desktop Browser.
+"""Drago - Privacy-First, Low-Memory Desktop Browser.
 
-Entry point for launching the Grago application with strong process isolation
+Entry point for launching the Drago application with strong process isolation
 and minimal attack surface architecture.
 """
 
@@ -47,19 +47,17 @@ from browser.controller import (
     APP_NAME,
     DEFAULT_HOME_URL,
     IDLE_TIMEOUT_SECONDS,
+    DragoWindow,
     GragoWindow,
 )
 from browser.privacy import BrowsingMode
 from browser.security import ProxyMode
 
-# Backwards-compatible alias
-GragoWindow = GragoWindow
-
 
 def main() -> int:
     """Parse arguments and execute the Qt application event loop."""
     parser = argparse.ArgumentParser(
-        description="Grago: A privacy-first, low-memory Python desktop browser with security architecture."
+        description="Drago: A privacy-first, low-memory Python desktop browser with security architecture."
     )
     parser.add_argument(
         "--url",
@@ -86,12 +84,12 @@ def main() -> int:
     args = parser.parse_args()
 
     QApplication.setApplicationName(APP_NAME)
-    QApplication.setOrganizationName("Grago")
+    QApplication.setOrganizationName("Drago")
 
     app = QApplication(sys.argv)
 
     start_url = args.url or DEFAULT_HOME_URL
-    window = GragoWindow(start_url=start_url)
+    window = DragoWindow(start_url=start_url)
 
     if args.idle_timeout != IDLE_TIMEOUT_SECONDS:
         window._memory_manager.idle_timeout_seconds = args.idle_timeout

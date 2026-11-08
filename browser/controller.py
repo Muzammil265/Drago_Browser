@@ -64,9 +64,9 @@ from browser.privacy import BrowsingMode, PrivacyManager, normalize_url
 from browser.security import FingerprintProtectionMode, ProxyMode
 from browser.storage import StorageManager
 
-APP_NAME = "Grago"
+APP_NAME = "Drago"
 DEFAULT_HOME_URL = "https://www.google.com"
-NEW_TAB_SENTINEL = "grago://newtab"
+NEW_TAB_SENTINEL = "drago://newtab"
 IDLE_TIMEOUT_SECONDS = 180
 # Raised intervals → less CPU burn while the browser sits idle
 MEMORY_REFRESH_MS = 8000
@@ -1247,7 +1247,7 @@ class SecurityArchitectureDialog(QDialog):
     def __init__(self, privacy_manager: PrivacyManager, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._privacy_manager = privacy_manager
-        self.setWindowTitle("Recommended Security Architecture — Grago")
+        self.setWindowTitle("Recommended Security Architecture — Drago")
         self.setMinimumSize(660, 680)
         self.setStyleSheet(
             """
@@ -2073,8 +2073,8 @@ class AboutDialog(QDialog):
 PrivacyDialog = SecurityArchitectureDialog
 
 
-class GragoWindow(QMainWindow):
-    """Main window for the Grago browser application."""
+class DragoWindow(QMainWindow):
+    """Main window for the Drago browser application."""
 
     def __init__(self, start_url: Optional[str] = None) -> None:
         super().__init__()
@@ -2153,7 +2153,7 @@ class GragoWindow(QMainWindow):
         self.btn_security_indicator.clicked.connect(self._show_shields_flyout)
         toolbar.addWidget(self.btn_security_indicator)
 
-        # Address / Search Bar
+        # Address / Search Bar (Clean & Expanded)
         self.url_bar = QLineEdit(self)
         self.url_bar.setObjectName("url-bar")
         self.url_bar.setPlaceholderText("Search or enter web address...")
@@ -2162,101 +2162,8 @@ class GragoWindow(QMainWindow):
         self.url_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         toolbar.addWidget(self.url_bar)
 
-        # Brave Shields Button
-        self.btn_shields = QPushButton("🛡️ Shields", self)
-        self.btn_shields.setObjectName("shield-btn")
-        self.btn_shields.setToolTip("Brave Shields: Tracker & ad blocking, anti-fingerprinting (Ctrl+Shift+B)")
-        self.btn_shields.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_shields.clicked.connect(self._show_shields_flyout)
-        toolbar.addWidget(self.btn_shields)
-
-        # Tor New Identity Button
-        self.btn_new_identity = QPushButton("✨ New Identity", self)
-        self.btn_new_identity.setObjectName("identity-btn")
-        self.btn_new_identity.setToolTip("Tor New Identity: Wipe cookies, cache & rotate seed (Ctrl+Shift+U)")
-        self.btn_new_identity.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_new_identity.clicked.connect(self._trigger_new_identity)
-        toolbar.addWidget(self.btn_new_identity)
-
-        # Sleep threshold selector
-        self.combo_timeout = QComboBox(self)
-        self.combo_timeout.addItem("Sleep: 30s (Demo)", 30)
-        self.combo_timeout.addItem("Sleep: 1 min", 60)
-        self.combo_timeout.addItem("Sleep: 3 min (Default)", 180)
-        self.combo_timeout.addItem("Sleep: 5 min", 300)
-        self.combo_timeout.addItem("Sleep: 10 min", 600)
-        self.combo_timeout.addItem("Sleep: Disabled", 0)
-        self.combo_timeout.setCurrentIndex(2)  # 3 min default
-        self.combo_timeout.currentIndexChanged.connect(self._on_timeout_changed)
-        self.combo_timeout.setToolTip("Select inactive duration before tab is put to sleep")
-        toolbar.addWidget(self.combo_timeout)
-
-        # Instant Hibernate Button
-        self.btn_sleep_bg = QPushButton("💤 Sleep Background", self)
-        self.btn_sleep_bg.setObjectName("sleep-btn")
-        self.btn_sleep_bg.setToolTip("Hibernate inactive tabs right now to free memory (Ctrl+Shift+S)")
-        self.btn_sleep_bg.clicked.connect(self._hibernate_background_tabs)
-        toolbar.addWidget(self.btn_sleep_bg)
-
-        # ── Mode Switcher (Lean / Private / Safest) ──────────────────────
-        mode_frame = QFrame(self)
-        mode_frame.setObjectName("mode-frame")
-        mode_frame.setStyleSheet("""
-            QFrame#mode-frame {
-                background-color: #0f1115;
-                border: 1px solid #2e3447;
-                border-radius: 8px;
-                padding: 2px;
-            }
-        """)
-        mode_layout = QHBoxLayout(mode_frame)
-        mode_layout.setContentsMargins(2, 2, 2, 2)
-        mode_layout.setSpacing(2)
-
-        self.btn_mode_lean = QPushButton("⚡ Lean", self)
-        self.btn_mode_lean.setObjectName("mode-lean-btn")
-        self.btn_mode_lean.setToolTip("Lean Mode: tracker blocking, low memory (active)")
-        self.btn_mode_lean.setCheckable(True)
-        self.btn_mode_lean.setChecked(True)
-        self.btn_mode_lean.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_mode_lean.clicked.connect(lambda: self._set_mode(BrowsingMode.LEAN))
-        mode_layout.addWidget(self.btn_mode_lean)
-
-        self.btn_mode_private = QPushButton("🔒 Private", self)
-        self.btn_mode_private.setObjectName("mode-private-btn")
-        self.btn_mode_private.setToolTip("Private Mode: stricter cookie & JS policy, anti-fingerprinting")
-        self.btn_mode_private.setCheckable(True)
-        self.btn_mode_private.setChecked(False)
-        self.btn_mode_private.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_mode_private.clicked.connect(lambda: self._set_mode(BrowsingMode.PRIVATE))
-        mode_layout.addWidget(self.btn_mode_private)
-
-        self.btn_mode_safest = QPushButton("🛡️ Safest", self)
-        self.btn_mode_safest.setObjectName("mode-safest-btn")
-        self.btn_mode_safest.setToolTip("Safest Mode: JavaScript disabled, WebGL disabled, strict HTTPS (Tor 'Safest')")
-        self.btn_mode_safest.setCheckable(True)
-        self.btn_mode_safest.setChecked(False)
-        self.btn_mode_safest.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_mode_safest.clicked.connect(lambda: self._set_mode(BrowsingMode.SAFEST))
-        mode_layout.addWidget(self.btn_mode_safest)
-
-        toolbar.addWidget(mode_frame)
-
-        # Architecture details button
-        self.btn_privacy = QPushButton("🏛️ Architecture", self)
-        self.btn_privacy.setObjectName("shield-btn")
-        self.btn_privacy.setToolTip("View full 4-Layer Security Architecture & Telemetry")
-        self.btn_privacy.clicked.connect(self._show_security_architecture_dialog)
-        toolbar.addWidget(self.btn_privacy)
-
         # Wire interceptor count update
         self._privacy_manager.interceptor.blocked_count_changed.connect(self._on_blocked_count_changed)
-
-        # Memory Indicator Badge
-        self.lbl_memory = QLabel("⚡ Initializing...", self)
-        self.lbl_memory.setObjectName("memory-badge")
-        self.lbl_memory.setToolTip("Memory (RSS) consumed by Python app and child Chromium engines")
-        toolbar.addWidget(self.lbl_memory)
 
         # ── Three-Dots Menu Button in the Right Side Corner ───────────────
         self.btn_menu = QPushButton("⋮", self)
@@ -2294,9 +2201,84 @@ class GragoWindow(QMainWindow):
         # Status Bar
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
+
+        # Tab statistics
         self.lbl_tab_stats = QLabel("Tabs: 0", self)
         self.lbl_tab_stats.setStyleSheet("color: #94a3b8; font-size: 11px; margin-right: 12px;")
         self.status_bar.addPermanentWidget(self.lbl_tab_stats)
+
+        # Memory Indicator in Status Bar
+        self.lbl_memory = QLabel("⚡ Initializing...", self)
+        self.lbl_memory.setObjectName("memory-badge")
+        self.lbl_memory.setStyleSheet("""
+            QLabel#memory-badge {
+                background-color: #1a1e2b;
+                border: 1px solid #2d3447;
+                border-radius: 4px;
+                padding: 2px 8px;
+                color: #38bdf8;
+                font-weight: 600;
+                font-size: 11px;
+                margin-right: 6px;
+            }
+        """)
+        self.lbl_memory.setToolTip("Memory (RSS) consumed by Python app and child Chromium engines")
+        self.status_bar.addPermanentWidget(self.lbl_memory)
+
+        # Brave Shields status button in status bar (compact)
+        self.btn_shields = QPushButton("🛡️ Shields", self)
+        self.btn_shields.setObjectName("shield-btn")
+        self.btn_shields.setStyleSheet("""
+            QPushButton#shield-btn {
+                background-color: #064e3b;
+                border: 1px solid #059669;
+                color: #a7f3d0;
+                font-size: 11px;
+                font-weight: 600;
+                padding: 2px 8px;
+                border-radius: 4px;
+                margin-right: 6px;
+            }
+            QPushButton#shield-btn:hover {
+                background-color: #065f46;
+                border-color: #10b981;
+                color: #6ee7b7;
+            }
+        """)
+        self.btn_shields.setToolTip("Brave Shields: Tracker & ad blocking, anti-fingerprinting (Ctrl+Shift+B)")
+        self.btn_shields.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_shields.clicked.connect(self._show_shields_flyout)
+        self.status_bar.addPermanentWidget(self.btn_shields)
+
+        # Hidden placeholder controls for compatibility with settings/state methods
+        self.combo_timeout = QComboBox(self)
+        self.combo_timeout.addItem("30s", 30)
+        self.combo_timeout.addItem("1 min", 60)
+        self.combo_timeout.addItem("3 min", 180)
+        self.combo_timeout.addItem("5 min", 300)
+        self.combo_timeout.addItem("10 min", 600)
+        self.combo_timeout.addItem("Disabled", 0)
+        self.combo_timeout.setCurrentIndex(2)
+        self.combo_timeout.setVisible(False)
+
+        self.btn_sleep_bg = QPushButton(self)
+        self.btn_sleep_bg.setVisible(False)
+        self.btn_sleep_bg.clicked.connect(self._hibernate_background_tabs)
+
+        self.btn_new_identity = QPushButton(self)
+        self.btn_new_identity.setVisible(False)
+        self.btn_new_identity.clicked.connect(self._trigger_new_identity)
+
+        self.btn_privacy = QPushButton(self)
+        self.btn_privacy.setVisible(False)
+        self.btn_privacy.clicked.connect(self._show_security_architecture_dialog)
+
+        self.btn_mode_lean = QPushButton(self)
+        self.btn_mode_lean.setVisible(False)
+        self.btn_mode_private = QPushButton(self)
+        self.btn_mode_private.setVisible(False)
+        self.btn_mode_safest = QPushButton(self)
+        self.btn_mode_safest.setVisible(False)
 
     def _setup_shortcuts(self) -> None:
         """Bind common browser keyboard shortcuts."""
@@ -2478,7 +2460,7 @@ class GragoWindow(QMainWindow):
         # Record visited page in SQLite history (strictly in non-private mode)
         if ok and tab.url.isValid() and self._privacy_manager.mode == BrowsingMode.LEAN:
             u_str = tab.url.toString()
-            if not u_str.startswith("grago://") and not u_str.startswith("about:"):
+            if not u_str.startswith("drago://") and not u_str.startswith("grago://") and not u_str.startswith("about:"):
                 self._storage.add_history(u_str, tab.title)
 
         # Check and apply YouTube-specific Ad & Streaming Shield
@@ -2604,11 +2586,24 @@ class GragoWindow(QMainWindow):
 
     def _on_timeout_changed(self) -> None:
         timeout_seconds = self.combo_timeout.currentData()
+        self._set_sleep_timeout(timeout_seconds)
+
+    def _set_sleep_timeout(self, timeout_seconds: int) -> None:
+        """Set tab idle timeout seconds and update storage & open tabs."""
         self._memory_manager.idle_timeout_seconds = timeout_seconds
+        self._storage.set_setting("idle_timeout_seconds", str(timeout_seconds))
+        if hasattr(self, "combo_timeout"):
+            idx = self.combo_timeout.findData(timeout_seconds)
+            if idx >= 0:
+                self.combo_timeout.blockSignals(True)
+                self.combo_timeout.setCurrentIndex(idx)
+                self.combo_timeout.blockSignals(False)
         for i in range(self.tab_widget.count()):
             widget = self.tab_widget.widget(i)
             if isinstance(widget, BrowserTabItem):
                 widget._idle_seconds = timeout_seconds
+        label = "Disabled" if timeout_seconds == 0 else (f"{timeout_seconds}s" if timeout_seconds < 60 else f"{timeout_seconds // 60}m")
+        self.status_bar.showMessage(f"⏱️ Inactive tab sleep timeout set to: {label}", 3500)
 
     def _check_tab_inactivity(self) -> None:
         """Periodically evaluate tabs against idle timeout and hibernate inactive ones."""
@@ -2836,15 +2831,55 @@ class GragoWindow(QMainWindow):
 
         menu.addSeparator()
 
-        action_shields = menu.addAction("🛡️  Brave Shields")
+        # Browsing Mode Submenu
+        mode_menu = menu.addMenu("🛡️  Browsing Mode")
+        current_mode = self._privacy_manager.mode
+        
+        action_lean = mode_menu.addAction("⚡  Lean Mode (Ad-blocking, Fast)")
+        action_lean.setCheckable(True)
+        action_lean.setChecked(current_mode == BrowsingMode.LEAN)
+        action_lean.triggered.connect(lambda: self._set_mode(BrowsingMode.LEAN))
+
+        action_private = mode_menu.addAction("🔒  Private Mode (No History, Anti-Fingerprint)")
+        action_private.setCheckable(True)
+        action_private.setChecked(current_mode == BrowsingMode.PRIVATE)
+        action_private.triggered.connect(lambda: self._set_mode(BrowsingMode.PRIVATE))
+
+        action_safest = mode_menu.addAction("🛡️  Safest Mode (No JS, Strict HTTPS)")
+        action_safest.setCheckable(True)
+        action_safest.setChecked(current_mode == BrowsingMode.SAFEST)
+        action_safest.triggered.connect(lambda: self._set_mode(BrowsingMode.SAFEST))
+
+        # Memory & Sleep Submenu
+        memory_menu = menu.addMenu("⚡  Memory & Tab Sleep")
+        action_sleep_now = memory_menu.addAction("💤  Sleep Inactive Tabs Now")
+        action_sleep_now.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        action_sleep_now.triggered.connect(self._hibernate_background_tabs)
+
+        memory_menu.addSeparator()
+        timeout_menu = memory_menu.addMenu("⏱️  Tab Sleep Inactivity Timeout")
+        current_timeout = self._memory_manager.idle_timeout_seconds
+        
+        timeout_options = [
+            ("30 Seconds (Demo)", 30),
+            ("1 Minute", 60),
+            ("3 Minutes (Default)", 180),
+            ("5 Minutes", 300),
+            ("10 Minutes", 600),
+            ("Disabled", 0),
+        ]
+        for label, val in timeout_options:
+            act = timeout_menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(current_timeout == val)
+            act.triggered.connect(lambda checked, v=val: self._set_sleep_timeout(v))
+
+        # Privacy Shields & Security Tools
+        action_shields = menu.addAction("🛡️  Brave Shields Panel")
         action_shields.setShortcut(QKeySequence("Ctrl+Shift+B"))
         action_shields.triggered.connect(self._show_shields_flyout)
 
-        action_sleep = menu.addAction("💤  Hibernate Inactive Tabs")
-        action_sleep.setShortcut(QKeySequence("Ctrl+Shift+S"))
-        action_sleep.triggered.connect(self._hibernate_background_tabs)
-
-        action_tor = menu.addAction("✨  Tor New Identity")
+        action_tor = menu.addAction("✨  Tor New Identity (Flush & Rotate)")
         action_tor.setShortcut(QKeySequence("Ctrl+Shift+U"))
         action_tor.triggered.connect(self._trigger_new_identity)
 
@@ -2878,7 +2913,7 @@ class GragoWindow(QMainWindow):
         if not tab or not tab.url.isValid():
             return
         url_str = tab.url.toString()
-        if url_str.startswith("grago://") or url_str.startswith("about:"):
+        if url_str.startswith("drago://") or url_str.startswith("grago://") or url_str.startswith("about:"):
             return
         title = tab.title or url_str
         self._storage.add_bookmark(title, url_str)
@@ -2957,7 +2992,7 @@ class GragoWindow(QMainWindow):
             tab.web_view.findText(text)
 
     def _open_new_window(self) -> None:
-        new_win = GragoWindow(start_url=self._start_url)
+        new_win = DragoWindow(start_url=self._start_url)
         new_win.show()
         if not hasattr(self, "_child_windows"):
             self._child_windows = []
@@ -3024,3 +3059,7 @@ class GragoWindow(QMainWindow):
         if self._privacy_manager.network_security.clear_on_exit:
             self._privacy_manager.clear_session_data()
         super().closeEvent(event)
+
+
+# Backwards compatibility alias
+GragoWindow = DragoWindow
