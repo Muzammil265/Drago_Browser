@@ -339,18 +339,23 @@ class TrackerBlockInterceptor(QWebEngineUrlRequestInterceptor):
 
 
 # ── URL helpers ────────────────────────────────────────────────────────────
-def get_search_url(query: str) -> QUrl:
-    """Format a query string into a Google search QUrl."""
+def get_search_url(query: str, template: Optional[str] = None) -> QUrl:
+    """Format a query string into a search QUrl."""
+    tmpl = template or DEFAULT_SEARCH_TEMPLATE
     encoded_query = urllib.parse.quote_plus(query.strip())
-    return QUrl(DEFAULT_SEARCH_TEMPLATE.format(query=encoded_query))
+    return QUrl(tmpl.format(query=encoded_query))
 
 
-def normalize_url(text: str, default_home: str = DEFAULT_HOME_URL) -> QUrl:
+def normalize_url(
+    text: str,
+    default_home: str = DEFAULT_HOME_URL,
+    search_template: Optional[str] = None,
+) -> QUrl:
     """Parse user input from the address bar into a valid QUrl.
 
     If the text looks like a valid URL or host (e.g. domain, localhost),
     navigates directly (adding https:// if protocol omitted).
-    Otherwise, treats the text as a Google search query.
+    Otherwise, treats the text as a web search query.
     """
     cleaned = text.strip()
     if not cleaned:
@@ -358,7 +363,7 @@ def normalize_url(text: str, default_home: str = DEFAULT_HOME_URL) -> QUrl:
 
     # Spaces → search query
     if " " in cleaned:
-        return get_search_url(cleaned)
+        return get_search_url(cleaned, search_template)
 
     # Known protocols or about: schemes
     if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", cleaned) or cleaned.startswith("about:"):
@@ -370,7 +375,7 @@ def normalize_url(text: str, default_home: str = DEFAULT_HOME_URL) -> QUrl:
         return QUrl(f"https://{cleaned}")
 
     # Fallback to web search
-    return get_search_url(cleaned)
+    return get_search_url(cleaned, search_template)
 
 
 # ── Privacy Manager ────────────────────────────────────────────────────────

@@ -11,9 +11,23 @@ import time
 from typing import Dict, Optional
 
 from PySide6.QtCore import QEvent, QPoint, QSize, QTimer, QUrl, Qt, Signal, QPropertyAnimation, QEasingCurve, QRect
-from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QPainter, QShortcut, QLinearGradient, QBrush, QPalette, QPixmap
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QDesktopServices,
+    QFont,
+    QIcon,
+    QKeySequence,
+    QPainter,
+    QShortcut,
+    QLinearGradient,
+    QBrush,
+    QPalette,
+    QPixmap,
+)
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QCheckBox,
     QComboBox,
@@ -21,9 +35,12 @@ from PySide6.QtWidgets import (
     QFrame,
     QGraphicsBlurEffect,
     QHBoxLayout,
+    QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -32,6 +49,8 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QStatusBar,
     QTabBar,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QToolBar,
     QVBoxLayout,
@@ -43,6 +62,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from browser.memory_manager import ResourceMonitor, TabMemoryManager
 from browser.privacy import BrowsingMode, PrivacyManager, normalize_url
 from browser.security import FingerprintProtectionMode, ProxyMode
+from browser.storage import StorageManager
 
 APP_NAME = "Grago"
 DEFAULT_HOME_URL = "https://www.google.com"
@@ -354,6 +374,81 @@ QPushButton#mode-private-btn:hover:!checked,
 QPushButton#mode-safest-btn:hover:!checked {
     background-color: #1e2330;
     color: #cbd5e1;
+}
+
+/* ── Main Menu & Three-Dots Button ─────────────────────────────────── */
+QPushButton#menu-btn {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: #e2e8f0;
+    font-size: 18px;
+    font-weight: 700;
+    padding: 2px 8px;
+    min-width: 28px;
+    max-width: 32px;
+    min-height: 26px;
+}
+
+QPushButton#menu-btn:hover {
+    background-color: #232734;
+    border-color: #3b82f6;
+    color: #ffffff;
+}
+
+QPushButton#menu-btn:pressed {
+    background-color: #1e2230;
+}
+
+QMenu {
+    background-color: #171922;
+    border: 1px solid #2e3447;
+    border-radius: 8px;
+    padding: 6px;
+    color: #e2e8f0;
+}
+
+QMenu::item {
+    background-color: transparent;
+    padding: 6px 28px 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin: 1px 2px;
+}
+
+QMenu::item:selected {
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+QMenu::item:disabled {
+    color: #4b5563;
+}
+
+QMenu::separator {
+    height: 1px;
+    background-color: #232734;
+    margin: 4px 8px;
+}
+
+/* ── Table widgets for Bookmarks & History ──────────────────────────── */
+QTableWidget {
+    background-color: #141720;
+    border: 1px solid #232838;
+    border-radius: 8px;
+    gridline-color: #1f2432;
+    color: #e2e8f0;
+    selection-background-color: #2563eb;
+    selection-color: #ffffff;
+}
+
+QHeaderView::section {
+    background-color: #171922;
+    color: #94a3b8;
+    padding: 6px 10px;
+    border: none;
+    border-bottom: 1px solid #232838;
+    font-weight: 600;
 }
 """
 
@@ -1370,10 +1465,618 @@ class SecurityArchitectureDialog(QDialog):
 PrivacyDialog = SecurityArchitectureDialog
 
 
+class BookmarksDialog(QDialog):
+    """Manager dialog for saved bookmarks stored in SQLite."""
+
+    def __init__(
+        self,
+        storage: StorageManager,
+        parent: Optional[QWidget] = None,
+        open_callback=None,
+    ) -> None:
+        super().__init__(parent)
+        self._storage = storage
+        self._open_callback = open_callback
+
+        self.setWindowTitle("Bookmarks — LeanBrowse")
+        self.resize(680, 440)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #131620;
+                color: #e2e8f0;
+            }
+            QLabel {
+                color: #cbd5e1;
+            }
+            QLineEdit#bm-search {
+                background-color: #171922;
+                border: 1px solid #2e3447;
+                border-radius: 6px;
+                padding: 6px 12px;
+                color: #f8fafc;
+                font-size: 13px;
+            }
+            QLineEdit#bm-search:focus {
+                border-color: #3b82f6;
+            }
+        """)
+        self._setup_ui()
+        self._load_bookmarks()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(18, 18, 18, 18)
+
+        # Header card
+        header = QFrame(self)
+        header.setStyleSheet("background-color: #1a1e2b; border-radius: 8px; padding: 6px;")
+        h_layout = QHBoxLayout(header)
+        h_layout.setContentsMargins(12, 10, 12, 10)
+
+        lbl_icon = QLabel("🔖", header)
+        lbl_icon.setStyleSheet("font-size: 24px; background: transparent;")
+        h_layout.addWidget(lbl_icon)
+
+        v_head = QVBoxLayout()
+        v_head.setSpacing(2)
+        lbl_title = QLabel("Bookmarks Manager", header)
+        lbl_title.setStyleSheet("font-size: 16px; font-weight: 700; color: #f8fafc; background: transparent;")
+        lbl_desc = QLabel("Organize and search your saved sites (stored locally in SQLite).", header)
+        lbl_desc.setStyleSheet("font-size: 12px; color: #94a3b8; background: transparent;")
+        v_head.addWidget(lbl_title)
+        v_head.addWidget(lbl_desc)
+        h_layout.addLayout(v_head)
+        h_layout.addStretch()
+
+        layout.addWidget(header)
+
+        # Search bar
+        self.search_input = QLineEdit(self)
+        self.search_input.setObjectName("bm-search")
+        self.search_input.setPlaceholderText("🔍  Search bookmarks by title or URL...")
+        self.search_input.textChanged.connect(self._on_search_changed)
+        layout.addWidget(self.search_input)
+
+        # Table
+        self.table = QTableWidget(self)
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(["Title", "URL", "Date Added"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setColumnWidth(0, 220)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.itemDoubleClicked.connect(self._on_item_double_clicked)
+        layout.addWidget(self.table)
+
+        # Buttons row
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        self.btn_open = QPushButton("🌐 Open Selected", self)
+        self.btn_open.setObjectName("accent-btn")
+        self.btn_open.clicked.connect(self._open_selected)
+        btn_row.addWidget(self.btn_open)
+
+        self.btn_delete = QPushButton("🗑️ Delete", self)
+        self.btn_delete.clicked.connect(self._delete_selected)
+        btn_row.addWidget(self.btn_delete)
+
+        btn_row.addStretch()
+
+        btn_close = QPushButton("Close", self)
+        btn_close.clicked.connect(self.accept)
+        btn_row.addWidget(btn_close)
+
+        layout.addLayout(btn_row)
+
+    def _load_bookmarks(self, search: str = "") -> None:
+        bookmarks = self._storage.get_bookmarks(search)
+        self.table.setRowCount(len(bookmarks))
+        for row, bm in enumerate(bookmarks):
+            item_title = QTableWidgetItem(bm["title"])
+            item_title.setData(Qt.ItemDataRole.UserRole, bm["url"])
+            item_title.setData(Qt.ItemDataRole.UserRole + 1, bm["id"])
+
+            item_url = QTableWidgetItem(bm["url"])
+            item_url.setForeground(QColor("#38bdf8"))
+
+            item_date = QTableWidgetItem(str(bm.get("date_added", "")))
+            item_date.setForeground(QColor("#94a3b8"))
+
+            self.table.setItem(row, 0, item_title)
+            self.table.setItem(row, 1, item_url)
+            self.table.setItem(row, 2, item_date)
+
+    def _on_search_changed(self, text: str) -> None:
+        self._load_bookmarks(text)
+
+    def _on_item_double_clicked(self, item: QTableWidgetItem) -> None:
+        self._open_selected()
+
+    def _open_selected(self) -> None:
+        row = self.table.currentRow()
+        if row >= 0:
+            item = self.table.item(row, 0)
+            if item:
+                url = item.data(Qt.ItemDataRole.UserRole)
+                if url and self._open_callback:
+                    self._open_callback(url)
+                    self.accept()
+
+    def _delete_selected(self) -> None:
+        row = self.table.currentRow()
+        if row >= 0:
+            item = self.table.item(row, 0)
+            if item:
+                bm_id = item.data(Qt.ItemDataRole.UserRole + 1)
+                if bm_id:
+                    self._storage.remove_bookmark(bm_id)
+                    self._load_bookmarks(self.search_input.text())
+
+
+class HistoryDialog(QDialog):
+    """Manager dialog for browsing history stored in SQLite."""
+
+    def __init__(
+        self,
+        storage: StorageManager,
+        parent: Optional[QWidget] = None,
+        open_callback=None,
+    ) -> None:
+        super().__init__(parent)
+        self._storage = storage
+        self._open_callback = open_callback
+
+        self.setWindowTitle("History — LeanBrowse")
+        self.resize(740, 480)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #131620;
+                color: #e2e8f0;
+            }
+            QLabel {
+                color: #cbd5e1;
+            }
+            QLineEdit#hist-search {
+                background-color: #171922;
+                border: 1px solid #2e3447;
+                border-radius: 6px;
+                padding: 6px 12px;
+                color: #f8fafc;
+                font-size: 13px;
+            }
+            QLineEdit#hist-search:focus {
+                border-color: #3b82f6;
+            }
+        """)
+        self._setup_ui()
+        self._load_history()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(18, 18, 18, 18)
+
+        # Header card
+        header = QFrame(self)
+        header.setStyleSheet("background-color: #1a1e2b; border-radius: 8px; padding: 6px;")
+        h_layout = QHBoxLayout(header)
+        h_layout.setContentsMargins(12, 10, 12, 10)
+
+        lbl_icon = QLabel("🕒", header)
+        lbl_icon.setStyleSheet("font-size: 24px; background: transparent;")
+        h_layout.addWidget(lbl_icon)
+
+        v_head = QVBoxLayout()
+        v_head.setSpacing(2)
+        lbl_title = QLabel("Browsing History", header)
+        lbl_title.setStyleSheet("font-size: 16px; font-weight: 700; color: #f8fafc; background: transparent;")
+        lbl_desc = QLabel("🔒 Private & Safest mode sessions are off-the-record and never recorded here.", header)
+        lbl_desc.setStyleSheet("font-size: 12px; color: #a5b4fc; background: transparent;")
+        v_head.addWidget(lbl_title)
+        v_head.addWidget(lbl_desc)
+        h_layout.addLayout(v_head)
+        h_layout.addStretch()
+
+        layout.addWidget(header)
+
+        # Search bar
+        self.search_input = QLineEdit(self)
+        self.search_input.setObjectName("hist-search")
+        self.search_input.setPlaceholderText("🔍  Search history by title or URL...")
+        self.search_input.textChanged.connect(self._on_search_changed)
+        layout.addWidget(self.search_input)
+
+        # Table
+        self.table = QTableWidget(self)
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(["Visit Time", "Title", "URL"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.table.setColumnWidth(1, 240)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.itemDoubleClicked.connect(self._on_item_double_clicked)
+        layout.addWidget(self.table)
+
+        # Buttons row
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        self.btn_open = QPushButton("🌐 Open Selected", self)
+        self.btn_open.setObjectName("accent-btn")
+        self.btn_open.clicked.connect(self._open_selected)
+        btn_row.addWidget(self.btn_open)
+
+        self.btn_delete = QPushButton("🗑️ Delete Selected", self)
+        self.btn_delete.clicked.connect(self._delete_selected)
+        btn_row.addWidget(self.btn_delete)
+
+        self.btn_clear_all = QPushButton("🧹 Clear All History", self)
+        self.btn_clear_all.clicked.connect(self._clear_all)
+        btn_row.addWidget(self.btn_clear_all)
+
+        btn_row.addStretch()
+
+        btn_close = QPushButton("Close", self)
+        btn_close.clicked.connect(self.accept)
+        btn_row.addWidget(btn_close)
+
+        layout.addLayout(btn_row)
+
+    def _load_history(self, search: str = "") -> None:
+        history = self._storage.get_history(search)
+        self.table.setRowCount(len(history))
+        for row, item in enumerate(history):
+            item_date = QTableWidgetItem(str(item.get("visit_timestamp", "")))
+            item_date.setForeground(QColor("#94a3b8"))
+            item_date.setData(Qt.ItemDataRole.UserRole, item["url"])
+            item_date.setData(Qt.ItemDataRole.UserRole + 1, item["id"])
+
+            item_title = QTableWidgetItem(item["title"])
+            item_url = QTableWidgetItem(item["url"])
+            item_url.setForeground(QColor("#38bdf8"))
+
+            self.table.setItem(row, 0, item_date)
+            self.table.setItem(row, 1, item_title)
+            self.table.setItem(row, 2, item_url)
+
+    def _on_search_changed(self, text: str) -> None:
+        self._load_history(text)
+
+    def _on_item_double_clicked(self, item: QTableWidgetItem) -> None:
+        self._open_selected()
+
+    def _open_selected(self) -> None:
+        row = self.table.currentRow()
+        if row >= 0:
+            item = self.table.item(row, 0)
+            if item:
+                url = item.data(Qt.ItemDataRole.UserRole)
+                if url and self._open_callback:
+                    self._open_callback(url)
+                    self.accept()
+
+    def _delete_selected(self) -> None:
+        row = self.table.currentRow()
+        if row >= 0:
+            item = self.table.item(row, 0)
+            if item:
+                hist_id = item.data(Qt.ItemDataRole.UserRole + 1)
+                if hist_id:
+                    self._storage.delete_history_item(hist_id)
+                    self._load_history(self.search_input.text())
+
+    def _clear_all(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            "Clear History",
+            "Are you sure you want to delete your entire browsing history?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._storage.clear_history()
+            self._load_history()
+
+
+class SettingsDialog(QDialog):
+    """Browser settings dialog managing SQLite-backed configuration."""
+
+    def __init__(
+        self,
+        storage: StorageManager,
+        parent: Optional[QWidget] = None,
+        on_saved=None,
+    ) -> None:
+        super().__init__(parent)
+        self._storage = storage
+        self._on_saved = on_saved
+
+        self.setWindowTitle("Settings — LeanBrowse")
+        self.resize(600, 500)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #131620;
+                color: #e2e8f0;
+            }
+            QLabel {
+                color: #cbd5e1;
+            }
+            QLineEdit {
+                background-color: #171922;
+                border: 1px solid #2e3447;
+                border-radius: 6px;
+                padding: 6px 12px;
+                color: #f8fafc;
+            }
+            QLineEdit:focus {
+                border-color: #3b82f6;
+            }
+        """)
+        self._setup_ui()
+        self._load_values()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(14)
+        layout.setContentsMargins(18, 18, 18, 18)
+
+        # Tabs
+        self.tab_widget = QTabWidget(self)
+
+        # Tab 1: General
+        tab_general = QWidget()
+        v_gen = QVBoxLayout(tab_general)
+        v_gen.setSpacing(12)
+        v_gen.setContentsMargins(14, 14, 14, 14)
+
+        lbl_home = QLabel("Homepage URL:", tab_general)
+        lbl_home.setStyleSheet("font-weight: 600;")
+        v_gen.addWidget(lbl_home)
+        self.inp_homepage = QLineEdit(tab_general)
+        v_gen.addWidget(self.inp_homepage)
+
+        lbl_se = QLabel("Default Search Engine:", tab_general)
+        lbl_se.setStyleSheet("font-weight: 600; margin-top: 8px;")
+        v_gen.addWidget(lbl_se)
+        self.combo_engine = QComboBox(tab_general)
+        self.combo_engine.addItem("Google", "https://www.google.com/search?q={query}")
+        self.combo_engine.addItem("DuckDuckGo", "https://duckduckgo.com/?q={query}")
+        self.combo_engine.addItem("Brave Search", "https://search.brave.com/search?q={query}")
+        self.combo_engine.addItem("Bing", "https://www.bing.com/search?q={query}")
+        self.combo_engine.addItem("Startpage", "https://www.startpage.com/sp/search?query={query}")
+        self.combo_engine.currentIndexChanged.connect(self._on_engine_changed)
+        v_gen.addWidget(self.combo_engine)
+
+        lbl_tmpl = QLabel("Search URL Template:", tab_general)
+        lbl_tmpl.setStyleSheet("font-weight: 600; margin-top: 8px;")
+        v_gen.addWidget(lbl_tmpl)
+        self.inp_template = QLineEdit(tab_general)
+        v_gen.addWidget(self.inp_template)
+
+        self.chk_restore_session = QCheckBox("Restore open tabs from previous session on launch", tab_general)
+        self.chk_restore_session.setStyleSheet("margin-top: 10px;")
+        v_gen.addWidget(self.chk_restore_session)
+
+        v_gen.addStretch()
+        self.tab_widget.addTab(tab_general, "🌐 General")
+
+        # Tab 2: Performance & Privacy
+        tab_privacy = QWidget()
+        v_priv = QVBoxLayout(tab_privacy)
+        v_priv.setSpacing(12)
+        v_priv.setContentsMargins(14, 14, 14, 14)
+
+        lbl_sleep = QLabel("Background Tab Sleep Timeout:", tab_privacy)
+        lbl_sleep.setStyleSheet("font-weight: 600;")
+        v_priv.addWidget(lbl_sleep)
+        self.combo_sleep = QComboBox(tab_privacy)
+        self.combo_sleep.addItem("30 seconds (Demo)", "30")
+        self.combo_sleep.addItem("1 minute", "60")
+        self.combo_sleep.addItem("3 minutes (Recommended)", "180")
+        self.combo_sleep.addItem("5 minutes", "300")
+        self.combo_sleep.addItem("10 minutes", "600")
+        self.combo_sleep.addItem("Disabled", "0")
+        v_priv.addWidget(self.combo_sleep)
+
+        lbl_mode = QLabel("Default Browsing Mode on Launch:", tab_privacy)
+        lbl_mode.setStyleSheet("font-weight: 600; margin-top: 8px;")
+        v_priv.addWidget(lbl_mode)
+        self.combo_mode = QComboBox(tab_privacy)
+        self.combo_mode.addItem("⚡ Lean Mode (Tracker blocking + Tab sleeping)", "lean")
+        self.combo_mode.addItem("🔒 Private Mode (Strict cookies + Anti-fingerprinting)", "private")
+        self.combo_mode.addItem("🛡️ Safest Mode (No JavaScript, No WebGL)", "safest")
+        v_priv.addWidget(self.combo_mode)
+
+        lbl_priv_note = QLabel(
+            "Note: LeanBrowse enforces off-the-record WebEngine profiles and never writes private session data to disk.",
+            tab_privacy,
+        )
+        lbl_priv_note.setWordWrap(True)
+        lbl_priv_note.setStyleSheet("color: #94a3b8; font-size: 11px; margin-top: 12px;")
+        v_priv.addWidget(lbl_priv_note)
+
+        v_priv.addStretch()
+        self.tab_widget.addTab(tab_privacy, "🛡️ Privacy & Memory")
+
+        # Tab 3: SQLite Storage
+        tab_storage = QWidget()
+        v_stor = QVBoxLayout(tab_storage)
+        v_stor.setSpacing(10)
+        v_stor.setContentsMargins(14, 14, 14, 14)
+
+        card_stor = QFrame(tab_storage)
+        card_stor.setStyleSheet("background-color: #1a1e2b; border-radius: 8px; padding: 10px;")
+        v_card = QVBoxLayout(card_stor)
+        v_card.setSpacing(6)
+
+        self.lbl_db_path = QLabel(f"<b>Database Location:</b> {self._storage.db_path}", card_stor)
+        self.lbl_db_path.setWordWrap(True)
+        self.lbl_db_size = QLabel(f"<b>File Size:</b> {self._storage.get_db_size_kb()} KB", card_stor)
+        self.lbl_hist_count = QLabel(f"<b>History Entries:</b> {self._storage.get_history_count()}", card_stor)
+        self.lbl_bm_count = QLabel(f"<b>Bookmarks Count:</b> {len(self._storage.get_bookmarks())}", card_stor)
+
+        v_card.addWidget(self.lbl_db_path)
+        v_card.addWidget(self.lbl_db_size)
+        v_card.addWidget(self.lbl_hist_count)
+        v_card.addWidget(self.lbl_bm_count)
+        v_stor.addWidget(card_stor)
+
+        btn_clear_hist = QPushButton("🧹 Clear Browsing History", tab_storage)
+        btn_clear_hist.clicked.connect(self._clear_hist_from_settings)
+        v_stor.addWidget(btn_clear_hist)
+
+        v_stor.addStretch()
+        self.tab_widget.addTab(tab_storage, "💾 SQLite Storage")
+
+        layout.addWidget(self.tab_widget)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        btn_row.addStretch()
+
+        self.btn_save = QPushButton("Save Settings", self)
+        self.btn_save.setObjectName("accent-btn")
+        self.btn_save.clicked.connect(self._save_settings)
+        btn_row.addWidget(self.btn_save)
+
+        btn_cancel = QPushButton("Cancel", self)
+        btn_cancel.clicked.connect(self.reject)
+        btn_row.addWidget(btn_cancel)
+
+        layout.addLayout(btn_row)
+
+    def _load_values(self) -> None:
+        self.inp_homepage.setText(self._storage.get_setting("homepage", DEFAULT_HOME_URL))
+        engine = self._storage.get_setting("search_engine", "Google")
+        idx = self.combo_engine.findText(engine)
+        if idx >= 0:
+            self.combo_engine.setCurrentIndex(idx)
+        self.inp_template.setText(
+            self._storage.get_setting("search_url_template", "https://www.google.com/search?q={query}")
+        )
+        self.chk_restore_session.setChecked(
+            self._storage.get_setting("restore_session_on_startup", "0") == "1"
+        )
+        sleep_sec = self._storage.get_setting("idle_timeout_seconds", "180")
+        s_idx = self.combo_sleep.findData(sleep_sec)
+        if s_idx >= 0:
+            self.combo_sleep.setCurrentIndex(s_idx)
+        def_mode = self._storage.get_setting("default_mode", "lean")
+        m_idx = self.combo_mode.findData(def_mode)
+        if m_idx >= 0:
+            self.combo_mode.setCurrentIndex(m_idx)
+
+    def _on_engine_changed(self, index: int) -> None:
+        data = self.combo_engine.itemData(index)
+        if data:
+            self.inp_template.setText(str(data))
+
+    def _clear_hist_from_settings(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            "Clear History",
+            "Clear all browsing history from the database?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._storage.clear_history()
+            self.lbl_hist_count.setText("<b>History Entries:</b> 0")
+
+    def _save_settings(self) -> None:
+        self._storage.set_setting("homepage", self.inp_homepage.text().strip())
+        self._storage.set_setting("search_engine", self.combo_engine.currentText())
+        self._storage.set_setting("search_url_template", self.inp_template.text().strip())
+        self._storage.set_setting("restore_session_on_startup", "1" if self.chk_restore_session.isChecked() else "0")
+        self._storage.set_setting("idle_timeout_seconds", str(self.combo_sleep.currentData()))
+        self._storage.set_setting("default_mode", str(self.combo_mode.currentData()))
+        if self._on_saved:
+            self._on_saved()
+        self.accept()
+
+
+class AboutDialog(QDialog):
+    """About dialog describing LeanBrowse architecture and features."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("About LeanBrowse")
+        self.setFixedSize(460, 380)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #131620;
+                color: #e2e8f0;
+                border-radius: 10px;
+            }
+            QLabel {
+                color: #cbd5e1;
+            }
+        """)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(14)
+        layout.setContentsMargins(24, 24, 24, 24)
+
+        card = QFrame(self)
+        card.setStyleSheet("background-color: #1a1e2b; border-radius: 8px; padding: 12px;")
+        v_card = QVBoxLayout(card)
+        v_card.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v_card.setSpacing(6)
+
+        lbl_logo = QLabel("🌐⚡", card)
+        lbl_logo.setStyleSheet("font-size: 36px; background: transparent;")
+        lbl_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v_card.addWidget(lbl_logo)
+
+        lbl_title = QLabel("LeanBrowse", card)
+        lbl_title.setStyleSheet("font-size: 20px; font-weight: 700; color: #f8fafc; background: transparent;")
+        lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v_card.addWidget(lbl_title)
+
+        lbl_ver = QLabel("Version 1.0.0 — Privacy-First & Low Memory", card)
+        lbl_ver.setStyleSheet("font-size: 12px; color: #38bdf8; background: transparent;")
+        lbl_ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v_card.addWidget(lbl_ver)
+
+        layout.addWidget(card)
+
+        lbl_body = QLabel(
+            "Built with Python 3, PySide6, and Qt WebEngine.<br><br>"
+            "<b>Key Highlights:</b><br>"
+            "• Built-in Ad & Tracker Shield (Brave Shields architecture)<br>"
+            "• Canvas & Audio Anti-Fingerprinting randomization<br>"
+            "• Automated Background Tab Hibernation for minimal RAM usage<br>"
+            "• SQLite-backed local persistence for Bookmarks, History & Settings<br>"
+            "• Strong Process Isolation with Site-per-Process sandboxing",
+            self,
+        )
+        lbl_body.setWordWrap(True)
+        lbl_body.setStyleSheet("font-size: 12px; color: #94a3b8; line-height: 1.4;")
+        layout.addWidget(lbl_body)
+
+        btn_close = QPushButton("Close", self)
+        btn_close.setObjectName("accent-btn")
+        btn_close.clicked.connect(self.accept)
+        layout.addWidget(btn_close)
+
+
+PrivacyDialog = SecurityArchitectureDialog
+
+
 class GragoWindow(QMainWindow):
     """Main window for the Grago browser application."""
 
-    def __init__(self, start_url: str = DEFAULT_HOME_URL) -> None:
+    def __init__(self, start_url: Optional[str] = None) -> None:
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.resize(1200, 800)
@@ -1382,7 +2085,8 @@ class GragoWindow(QMainWindow):
         # Managers
         self._privacy_manager = PrivacyManager(self)
         self._memory_manager = TabMemoryManager(idle_timeout_seconds=IDLE_TIMEOUT_SECONDS)
-        self._start_url = start_url
+        self._storage = StorageManager()
+        self._start_url = start_url or self._storage.get_setting("homepage", DEFAULT_HOME_URL)
         self._tab_counter = 0
 
         # Wire interceptor real-time blocked count signals
@@ -1393,9 +2097,19 @@ class GragoWindow(QMainWindow):
         self._setup_shortcuts()
         self._setup_timers()
 
-        # Open initial tab
-        # Open initial tab as the new-tab page (fast startup — no web request on launch)
-        self.add_new_tab()
+        # Check session restoration setting
+        restored = False
+        if self._storage.get_setting("restore_session_on_startup", "0") == "1":
+            saved = self._storage.get_saved_session()
+            if saved:
+                for item in saved:
+                    u = item.get("url")
+                    if u:
+                        self.add_new_tab(QUrl(u))
+                        restored = True
+        if not restored:
+            # Open initial tab as the new-tab page (fast startup — no web request on launch)
+            self.add_new_tab()
 
     def _setup_ui(self) -> None:
         """Assemble main layout, toolbar, tabs, and status bar."""
@@ -1445,6 +2159,7 @@ class GragoWindow(QMainWindow):
         self.url_bar.setPlaceholderText("Search or enter web address...")
         self.url_bar.setClearButtonEnabled(True)
         self.url_bar.returnPressed.connect(self._navigate_to_input)
+        self.url_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         toolbar.addWidget(self.url_bar)
 
         # Brave Shields Button
@@ -1543,7 +2258,13 @@ class GragoWindow(QMainWindow):
         self.lbl_memory.setToolTip("Memory (RSS) consumed by Python app and child Chromium engines")
         toolbar.addWidget(self.lbl_memory)
 
-        # (New Tab button is now in the tab bar corner — removed from toolbar)
+        # ── Three-Dots Menu Button in the Right Side Corner ───────────────
+        self.btn_menu = QPushButton("⋮", self)
+        self.btn_menu.setObjectName("menu-btn")
+        self.btn_menu.setToolTip("Customize and control LeanBrowse (Alt+F)")
+        self.btn_menu.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_menu.clicked.connect(self._show_main_menu)
+        toolbar.addWidget(self.btn_menu)
 
         # Progress bar
         self.progress_bar = QProgressBar(self)
@@ -1590,9 +2311,25 @@ class GragoWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Tab"), self, self._next_tab)
         QShortcut(QKeySequence("Ctrl+Shift+Tab"), self, self._prev_tab)
         QShortcut(QKeySequence("Ctrl+Shift+S"), self, self._hibernate_background_tabs)
-        QShortcut(QKeySequence("Ctrl+Shift+Delete"), self, self._show_security_architecture_dialog)
+        QShortcut(QKeySequence("Ctrl+Shift+Delete"), self, self._clear_browsing_data)
         QShortcut(QKeySequence("Ctrl+Shift+U"), self, self._trigger_new_identity)
         QShortcut(QKeySequence("Ctrl+Shift+B"), self, self._show_shields_flyout)
+
+        # Menu and navigation shortcuts
+        QShortcut(QKeySequence("Alt+F"), self, self._show_main_menu)
+        QShortcut(QKeySequence("Alt+E"), self, self._show_main_menu)
+        QShortcut(QKeySequence("Ctrl+D"), self, self._bookmark_current_page)
+        QShortcut(QKeySequence("Ctrl+Shift+O"), self, self._show_bookmarks_dialog)
+        QShortcut(QKeySequence("Ctrl+H"), self, self._show_history_dialog)
+        QShortcut(QKeySequence("Ctrl+J"), self, self._show_downloads)
+        QShortcut(QKeySequence("Ctrl+Plus"), self, self._zoom_in)
+        QShortcut(QKeySequence("Ctrl+="), self, self._zoom_in)
+        QShortcut(QKeySequence("Ctrl+-"), self, self._zoom_out)
+        QShortcut(QKeySequence("Ctrl+0"), self, self._zoom_reset)
+        QShortcut(QKeySequence("Ctrl+P"), self, self._print_page)
+        QShortcut(QKeySequence("Ctrl+F"), self, self._find_in_page)
+        QShortcut(QKeySequence("Ctrl+N"), self, self._open_new_window)
+        QShortcut(QKeySequence("Ctrl+Shift+P"), self, self._open_private_tab)
 
     def _setup_timers(self) -> None:
         """Start memory monitoring and tab idle checkers."""
@@ -1738,6 +2475,12 @@ class GragoWindow(QMainWindow):
         self._update_nav_buttons()
         self._update_shields_button_for_current_tab()
 
+        # Record visited page in SQLite history (strictly in non-private mode)
+        if ok and tab.url.isValid() and self._privacy_manager.mode == BrowsingMode.LEAN:
+            u_str = tab.url.toString()
+            if not u_str.startswith("grago://") and not u_str.startswith("about:"):
+                self._storage.add_history(u_str, tab.title)
+
         # Check and apply YouTube-specific Ad & Streaming Shield
         if ok and tab.web_view and tab.url.isValid():
             host = tab.url.host()
@@ -1806,7 +2549,8 @@ class GragoWindow(QMainWindow):
         text = self.url_bar.text().strip()
         if not text:
             return
-        target_url = normalize_url(text, default_home=self._start_url)
+        tmpl = self._storage.get_setting("search_url_template", None)
+        target_url = normalize_url(text, default_home=self._start_url, search_template=tmpl)
         tab = self._current_tab_item()
         if tab:
             tab.load(target_url)
@@ -2024,8 +2768,259 @@ class GragoWindow(QMainWindow):
             self.btn_security_indicator.setToolTip("Local / Internal Page")
             self.btn_security_indicator.setStyleSheet("color: #38bdf8;")
 
+    def _show_main_menu(self) -> None:
+        """Pop up the main application menu below the three-dots button."""
+        menu = QMenu(self)
+
+        action_new_tab = menu.addAction("🗂️  New Tab")
+        action_new_tab.setShortcut(QKeySequence("Ctrl+T"))
+        action_new_tab.triggered.connect(lambda: self.add_new_tab())
+
+        action_new_window = menu.addAction("🪟  New Window")
+        action_new_window.setShortcut(QKeySequence("Ctrl+N"))
+        action_new_window.triggered.connect(self._open_new_window)
+
+        action_new_private = menu.addAction("🔒  New Private Tab")
+        action_new_private.setShortcut(QKeySequence("Ctrl+Shift+P"))
+        action_new_private.triggered.connect(self._open_private_tab)
+
+        menu.addSeparator()
+
+        # Bookmarks submenu
+        bookmarks_menu = menu.addMenu("🔖  Bookmarks")
+        action_add_bm = bookmarks_menu.addAction("⭐  Bookmark This Tab")
+        action_add_bm.setShortcut(QKeySequence("Ctrl+D"))
+        action_add_bm.triggered.connect(self._bookmark_current_page)
+
+        action_show_bm = bookmarks_menu.addAction("📑  Show Bookmarks")
+        action_show_bm.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        action_show_bm.triggered.connect(self._show_bookmarks_dialog)
+
+        # History submenu
+        history_menu = menu.addMenu("🕒  History")
+        action_show_hist = history_menu.addAction("🕒  Show Full History")
+        action_show_hist.setShortcut(QKeySequence("Ctrl+H"))
+        action_show_hist.triggered.connect(self._show_history_dialog)
+
+        action_clear_hist = history_menu.addAction("🧹  Clear Browsing Data...")
+        action_clear_hist.setShortcut(QKeySequence("Ctrl+Shift+Delete"))
+        action_clear_hist.triggered.connect(self._clear_browsing_data)
+
+        action_downloads = menu.addAction("📥  Downloads")
+        action_downloads.setShortcut(QKeySequence("Ctrl+J"))
+        action_downloads.triggered.connect(self._show_downloads)
+
+        menu.addSeparator()
+
+        # Zoom submenu
+        zoom_menu = menu.addMenu("🔍  Zoom")
+        action_zoom_in = zoom_menu.addAction("➕  Zoom In")
+        action_zoom_in.setShortcut(QKeySequence("Ctrl++"))
+        action_zoom_in.triggered.connect(self._zoom_in)
+
+        action_zoom_out = zoom_menu.addAction("➖  Zoom Out")
+        action_zoom_out.setShortcut(QKeySequence("Ctrl+-"))
+        action_zoom_out.triggered.connect(self._zoom_out)
+
+        action_zoom_reset = zoom_menu.addAction("↺  Reset Zoom (100%)")
+        action_zoom_reset.setShortcut(QKeySequence("Ctrl+0"))
+        action_zoom_reset.triggered.connect(self._zoom_reset)
+
+        action_print = menu.addAction("📄  Print...")
+        action_print.setShortcut(QKeySequence("Ctrl+P"))
+        action_print.triggered.connect(self._print_page)
+
+        action_find = menu.addAction("🔎  Find in Page...")
+        action_find.setShortcut(QKeySequence("Ctrl+F"))
+        action_find.triggered.connect(self._find_in_page)
+
+        menu.addSeparator()
+
+        action_shields = menu.addAction("🛡️  Brave Shields")
+        action_shields.setShortcut(QKeySequence("Ctrl+Shift+B"))
+        action_shields.triggered.connect(self._show_shields_flyout)
+
+        action_sleep = menu.addAction("💤  Hibernate Inactive Tabs")
+        action_sleep.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        action_sleep.triggered.connect(self._hibernate_background_tabs)
+
+        action_tor = menu.addAction("✨  Tor New Identity")
+        action_tor.setShortcut(QKeySequence("Ctrl+Shift+U"))
+        action_tor.triggered.connect(self._trigger_new_identity)
+
+        action_restore_session = menu.addAction("🔄  Restore Previous Session")
+        action_restore_session.triggered.connect(self._restore_previous_session)
+
+        menu.addSeparator()
+
+        action_settings = menu.addAction("⚙️  Settings")
+        action_settings.triggered.connect(self._show_settings_dialog)
+
+        action_arch = menu.addAction("🏛️  Security Architecture & Telemetry")
+        action_arch.triggered.connect(self._show_security_architecture_dialog)
+
+        action_about = menu.addAction("ℹ️  About LeanBrowse")
+        action_about.triggered.connect(self._show_about_dialog)
+
+        menu.addSeparator()
+
+        action_exit = menu.addAction("🚪  Exit")
+        action_exit.setShortcut(QKeySequence("Ctrl+Q"))
+        action_exit.triggered.connect(self.close)
+
+        # Position menu right below the three-dots button aligned to its right edge
+        pos = self.btn_menu.mapToGlobal(QPoint(self.btn_menu.width(), self.btn_menu.height()))
+        pos.setX(pos.x() - menu.sizeHint().width())
+        menu.exec(pos)
+
+    def _bookmark_current_page(self) -> None:
+        tab = self._current_tab_item()
+        if not tab or not tab.url.isValid():
+            return
+        url_str = tab.url.toString()
+        if url_str.startswith("grago://") or url_str.startswith("about:"):
+            return
+        title = tab.title or url_str
+        self._storage.add_bookmark(title, url_str)
+        self.status_bar.showMessage(f"⭐ Bookmarked: {title}", 3500)
+
+    def _show_bookmarks_dialog(self) -> None:
+        dialog = BookmarksDialog(self._storage, self, open_callback=self._navigate_url_from_dialog)
+        dialog.exec()
+
+    def _show_history_dialog(self) -> None:
+        dialog = HistoryDialog(self._storage, self, open_callback=self._navigate_url_from_dialog)
+        dialog.exec()
+
+    def _navigate_url_from_dialog(self, url_str: str) -> None:
+        current = self._current_tab_item()
+        if current:
+            current.load(QUrl(url_str))
+        else:
+            self.add_new_tab(QUrl(url_str))
+
+    def _clear_browsing_data(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            "Clear Browsing Data",
+            "Clear browsing history and purge all session cache?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._storage.clear_history()
+            self._privacy_manager.clear_session_data()
+            self.status_bar.showMessage("🧹 Browsing data and cache cleared.", 3500)
+
+    def _show_downloads(self) -> None:
+        downloads_path = os.path.expanduser("~/Downloads")
+        os.makedirs(downloads_path, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(downloads_path))
+
+    def _zoom_in(self) -> None:
+        tab = self._current_tab_item()
+        if tab and tab.web_view:
+            new_zoom = round(min(3.0, tab.web_view.zoomFactor() + 0.1), 2)
+            tab.web_view.setZoomFactor(new_zoom)
+            self.status_bar.showMessage(f"🔍 Zoom: {int(new_zoom * 100)}%", 2000)
+
+    def _zoom_out(self) -> None:
+        tab = self._current_tab_item()
+        if tab and tab.web_view:
+            new_zoom = round(max(0.25, tab.web_view.zoomFactor() - 0.1), 2)
+            tab.web_view.setZoomFactor(new_zoom)
+            self.status_bar.showMessage(f"🔍 Zoom: {int(new_zoom * 100)}%", 2000)
+
+    def _zoom_reset(self) -> None:
+        tab = self._current_tab_item()
+        if tab and tab.web_view:
+            tab.web_view.setZoomFactor(1.0)
+            self.status_bar.showMessage("🔍 Zoom: 100%", 2000)
+
+    def _print_page(self) -> None:
+        tab = self._current_tab_item()
+        if tab and tab.web_view:
+            pdf_path = os.path.join(os.path.expanduser("~"), "Downloads", f"LeanBrowse_Print_{int(time.time())}.pdf")
+            try:
+                os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+                tab.web_view.page().printToPdf(pdf_path)
+                self.status_bar.showMessage(f"📄 Page saved as PDF: {pdf_path}", 4000)
+            except Exception as e:
+                self.status_bar.showMessage(f"Print error: {e}", 3000)
+
+    def _find_in_page(self) -> None:
+        tab = self._current_tab_item()
+        if not tab or not tab.web_view:
+            return
+        text, ok = QInputDialog.getText(self, "Find in Page", "Enter text to find:")
+        if ok and text:
+            tab.web_view.findText(text)
+
+    def _open_new_window(self) -> None:
+        new_win = GragoWindow(start_url=self._start_url)
+        new_win.show()
+        if not hasattr(self, "_child_windows"):
+            self._child_windows = []
+        self._child_windows.append(new_win)
+
+    def _open_private_tab(self) -> None:
+        self.add_new_tab()
+        self._set_mode(BrowsingMode.PRIVATE)
+
+    def _restore_previous_session(self) -> None:
+        saved_tabs = self._storage.get_saved_session()
+        if not saved_tabs:
+            self.status_bar.showMessage("No saved session found in database.", 3000)
+            return
+        active_idx = 0
+        for idx, tab_info in enumerate(saved_tabs):
+            u_str = tab_info.get("url")
+            if u_str:
+                self.add_new_tab(QUrl(u_str))
+                if tab_info.get("is_active"):
+                    active_idx = self.tab_widget.count() - 1
+        if self.tab_widget.count() > active_idx:
+            self.tab_widget.setCurrentIndex(active_idx)
+        self.status_bar.showMessage(f"🔄 Restored {len(saved_tabs)} tabs from previous session.", 3500)
+
+    def _show_settings_dialog(self) -> None:
+        dialog = SettingsDialog(self._storage, self, on_saved=self._apply_settings)
+        dialog.exec()
+
+    def _apply_settings(self) -> None:
+        self._start_url = self._storage.get_setting("homepage", DEFAULT_HOME_URL)
+        timeout_str = self._storage.get_setting("idle_timeout_seconds", "180")
+        try:
+            self._memory_manager.idle_timeout_seconds = int(timeout_str)
+            t_idx = self.combo_timeout.findData(int(timeout_str))
+            if t_idx >= 0:
+                self.combo_timeout.setCurrentIndex(t_idx)
+        except ValueError:
+            pass
+        self.status_bar.showMessage("⚙️ Settings applied successfully.", 3000)
+
+    def _show_about_dialog(self) -> None:
+        dialog = AboutDialog(self)
+        dialog.exec()
+
     def closeEvent(self, event) -> None:  # noqa: N802
-        """Purge in-memory cookies and storage on browser exit if enabled."""
+        """Save session tabs to SQLite, purge in-memory cookies/storage if enabled, and exit."""
+        try:
+            tabs_data = []
+            current_idx = self.tab_widget.currentIndex()
+            for i in range(self.tab_widget.count()):
+                tab = self.tab_widget.widget(i)
+                if isinstance(tab, BrowserTabItem):
+                    tabs_data.append({
+                        "url": tab.url.toString(),
+                        "title": tab.title,
+                        "is_active": (i == current_idx),
+                    })
+            if tabs_data:
+                self._storage.save_session(tabs_data)
+        except Exception:
+            pass
+
         if self._privacy_manager.network_security.clear_on_exit:
             self._privacy_manager.clear_session_data()
         super().closeEvent(event)

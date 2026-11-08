@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-# LeanBrowse (Grago) 🌐⚡
-=======
-# DragoBrowse 🌐⚡
->>>>>>> origin/main
+# LeanBrowse (DragoBrowse) 🌐⚡
 
 A low-memory, privacy-first desktop web browser built with **Python 3**, **PySide6 (Qt for Python)**, and **Qt WebEngine (Chromium)**.
 
@@ -10,11 +6,7 @@ A low-memory, privacy-first desktop web browser built with **Python 3**, **PySid
 
 ## 4-Layer Security Architecture
 
-<<<<<<< HEAD
 LeanBrowse implements a strong, practical 4-layer security architecture designed for lightweight, high-privacy desktop browsing:
-=======
-DragoBrowse divides responsibilities between a custom Python browser application layer and the embedded Chromium rendering engine:
->>>>>>> origin/main
 
 ```
 +-------------------------------------------------------------+
@@ -83,24 +75,22 @@ DragoBrowse divides responsibilities between a custom Python browser application
 ## Directory Structure
 
 ```
-<<<<<<< HEAD
 LeanBrowse/
 ├── main.py                     # Entry point & Chromium process isolation flags
-=======
-DragoBrowse/
-├── main.py                     # Application entry point & CLI options
->>>>>>> origin/main
 ├── requirements.txt            # Dependency definitions (PySide6, psutil, pytest)
 ├── requirements-lock.txt       # Pinned reproducible dependency versions
 ├── .gitignore                  # Git ignore rules for venv, cache, bytecode
 ├── pytest.ini                  # Pytest path and execution configuration
 ├── browser/
 │   ├── __init__.py             # Package metadata
-│   ├── controller.py           # Window UI, Shields flyout, New Identity, tab hibernation
+│   ├── controller.py           # Window UI, Three-dots menu, Shields flyout, New Identity, tab hibernation
+│   ├── storage.py              # SQLite storage: Bookmarks, History, Settings, Session Recovery
 │   ├── memory_manager.py       # Resource monitor (psutil) & tab idle lifecycle
 │   ├── privacy.py              # Browsing modes (Lean/Private/Safest), Brave Shields blocker
 │   └── security.py             # Anti-fingerprint engine, extension policy, update service, Tor proxy
 └── tests/
+    ├── test_controller_menu.py # Three-dots menu, UI dialogs, zoom controls
+    ├── test_storage.py         # SQLite CRUD: Bookmarks, History, Settings, Sessions
     ├── test_privacy.py         # URL normalization, search, and off-the-record tests
     ├── test_memory_manager.py  # RSS memory telemetry and tab hibernation tests
     └── test_security_architecture.py # Site isolation, anti-fingerprint, extension audits, Tor proxy
